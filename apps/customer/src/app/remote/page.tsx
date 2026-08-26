@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -44,7 +44,7 @@ interface FileSettingsState {
   fileType: 'image' | 'pdf' | 'docx' | 'other';
 }
 
-export default function RemotePrintPage() {
+function RemotePrintContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedKiosk = searchParams.get('kiosk');
@@ -1172,5 +1172,20 @@ export default function RemotePrintPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function RemotePrintPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fbff]">
+          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-3" />
+          <p className="text-slate-700 font-black text-sm">Loading Print Setup...</p>
+        </div>
+      }
+    >
+      <RemotePrintContent />
+    </Suspense>
   );
 }

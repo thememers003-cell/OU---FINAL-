@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CheckCircle2, Loader2, Printer, Send, FileText, XCircle } from 'lucide-react';
 import { getJob } from '@/lib/api';
 import { connectSocket, joinSession } from '@/lib/socket';
 
-export default function JobStatusPage({ params }: { params: { id: string } | Promise<{ id: string }> }) {
+function JobStatusContent({ params }: { params: { id: string } | Promise<{ id: string }> }) {
   const [jobId, setJobId] = useState<string>('');
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -183,5 +183,19 @@ export default function JobStatusPage({ params }: { params: { id: string } | Pro
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function JobStatusPage(props: { params: { id: string } | Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex flex-col items-center justify-center bg-dark-900">
+          <Loader2 className="w-10 h-10 text-xpos-500 animate-spin mb-3" />
+        </div>
+      }
+    >
+      <JobStatusContent {...props} />
+    </Suspense>
   );
 }
