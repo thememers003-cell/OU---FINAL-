@@ -2,6 +2,7 @@
   "name": "xpos",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "npm@10.8.2",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -18,6 +19,9 @@
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/docker-compose.yml down",
     "setup": "npm install && npm run db:generate && npm run db:migrate && npm run db:seed"
+  },
+  "dependencies": {
+    "turbo": "^2.1.0"
   },
   "devDependencies": {
     "turbo": "^2.1.0",
