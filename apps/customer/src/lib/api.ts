@@ -5,6 +5,9 @@
 export function getApiUrl(): string {
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
+    if (hostname.includes('loca.lt')) {
+      return 'https://xpos-api-cloud.loca.lt';
+    }
     return `http://${hostname}:4000`;
   }
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -20,6 +23,7 @@ async function apiRequest<T>(
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        'Bypass-Tunnel-Reminder': 'true',
         ...options.headers,
       },
     });
@@ -67,6 +71,7 @@ export function uploadFile(
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${getApiUrl()}/api/files/upload`, true);
+    xhr.setRequestHeader('Bypass-Tunnel-Reminder', 'true');
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {

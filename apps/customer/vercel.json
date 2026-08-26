@@ -1,0 +1,5 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "cd ../.. && npx prisma generate --schema=packages/database/prisma/schema.prisma && npm run build --filter=@xpos/customer",
+  "installCommand": "npm install"
+}

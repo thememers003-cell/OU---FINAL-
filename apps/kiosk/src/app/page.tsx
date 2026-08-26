@@ -28,14 +28,24 @@ import { playKeySound } from '@/lib/sound';
 
 function getApiUrl(): string {
   if (typeof window !== 'undefined') {
-    return `http://${window.location.hostname}:4000`;
+    const hostname = window.location.hostname;
+    if (hostname.includes('loca.lt')) {
+      return 'https://xpos-api-cloud.loca.lt';
+    }
+    return `http://${hostname}:4000`;
   }
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 }
 
 function getAppUrl(): string {
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    return `http://${window.location.hostname}:3000`;
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('loca.lt')) {
+      return 'https://xpos-print-customer.loca.lt';
+    }
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return `http://${hostname}:3000`;
+    }
   }
   return process.env.NEXT_PUBLIC_APP_URL || 'http://192.168.1.10:3000';
 }

@@ -1,0 +1,20 @@
+# Render.com Blueprint for XPOS API Backend (100% Free Tier)
+services:
+  - type: web
+    name: xpos-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npx prisma generate --schema=packages/database/prisma/schema.prisma && npm run build --filter=@xpos/api...
+    startCommand: npx tsx apps/api/src/index.ts
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        sync: false # Set to your Neon.tech / Supabase Postgres URL
+      - key: STORAGE_DRIVER
+        value: local # Or 's3' if using Cloudflare R2
+      - key: PRINT_CODE_EXPIRY_MINUTES
+        value: 1440
