@@ -1,11 +1,12 @@
-# Render.com Blueprint for XPOS API Backend (100% Free Tier)
+# Render.com Blueprint for Complete XPOS Cloud (API + Customer App)
 services:
+  # 1. Core API Backend & WebSocket Server
   - type: web
     name: xpos-api
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install && npx prisma generate --schema=packages/database/prisma/schema.prisma && npm run build --filter=@xpos/api...
+    buildCommand: npm install && npx prisma generate --schema=packages/database/prisma/schema.prisma
     startCommand: npx tsx apps/api/src/index.ts
     envVars:
       - key: NODE_ENV
@@ -13,8 +14,24 @@ services:
       - key: PORT
         value: 4000
       - key: DATABASE_URL
-        sync: false # Set to your Neon.tech / Supabase Postgres URL
+        sync: false
       - key: STORAGE_DRIVER
-        value: local # Or 's3' if using Cloudflare R2
+        value: local
       - key: PRINT_CODE_EXPIRY_MINUTES
         value: 1440
+
+  # 2. Customer-Facing Mobile Web App (Next.js)
+  - type: web
+    name: xpos-customer
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npx prisma generate --schema=packages/database/prisma/schema.prisma && npm run build --workspace=@xpos/customer
+    startCommand: npm run start --workspace=@xpos/customer -- -p $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://xpos-printing-cloud.onrender.com
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
