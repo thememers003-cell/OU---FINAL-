@@ -1,0 +1,42 @@
+{
+  "name": "@xpos/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@xpos/database": "*",
+    "@xpos/types": "*",
+    "@xpos/storage": "*",
+    "@xpos/payment": "*",
+    "@xpos/printer": "*",
+    "@xpos/queue": "*",
+    "@xpos/document": "*",
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.0",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "uuid": "^10.0.0",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/multer": "^1.4.12",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/uuid": "^10.0.0",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

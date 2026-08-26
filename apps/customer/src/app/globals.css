@@ -1,0 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-dark-950 text-white font-sans antialiased;
+    background: linear-gradient(180deg, #020617 0%, #0f172a 50%, #020617 100%);
+    min-height: 100vh;
+  }
+
+  ::selection {
+    @apply bg-xpos-600/40 text-white;
+  }
+}
+
+@layer components {
+  /* ── Glass Card ── */
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300;
+  }
+
+  .glass-card-hover:hover {
+    @apply bg-white/10 border-white/20;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+  }
+
+  /* ── Primary Button ── */
+  .btn-primary {
+    @apply relative px-8 py-4 bg-gradient-to-r from-xpos-600 to-xpos-500 text-white font-semibold 
+           rounded-xl transition-all duration-300 overflow-hidden;
+    box-shadow: 0 4px 20px rgba(92, 124, 250, 0.3);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 8px 30px rgba(92, 124, 250, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 10px rgba(92, 124, 250, 0.3);
+  }
+
+  .btn-primary::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent;
+    transform: translateX(-100%);
+    transition: transform 0.6s ease;
+  }
+
+  .btn-primary:hover::before {
+    transform: translateX(100%);
+  }
+
+  /* ── Secondary Button ── */
+  .btn-secondary {
+    @apply px-8 py-4 bg-white/5 border border-white/20 text-white font-semibold 
+           rounded-xl transition-all duration-300 backdrop-blur-sm;
+  }
+
+  .btn-secondary:hover {
+    @apply bg-white/10 border-white/30;
+    transform: translateY(-1px);
+  }
+
+  /* ── Large Touch Button (for kiosk) ── */
+  .btn-kiosk {
+    @apply px-12 py-8 text-2xl font-bold rounded-2xl transition-all duration-200;
+    min-height: 80px;
+  }
+
+  /* ── Status Badge ── */
+  .status-badge {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium;
+  }
+
+  .status-online {
+    @apply status-badge bg-accent-green/20 text-accent-green;
+  }
+
+  .status-offline {
+    @apply status-badge bg-dark-500/20 text-dark-400;
+  }
+
+  .status-printing {
+    @apply status-badge bg-accent-amber/20 text-accent-amber;
+  }
+
+  .status-error {
+    @apply status-badge bg-accent-rose/20 text-accent-rose;
+  }
+
+  /* ── Input ── */
+  .input-field {
+    @apply w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white 
+           placeholder-dark-400 focus:outline-none focus:border-xpos-500 focus:ring-1 
+           focus:ring-xpos-500/50 transition-all duration-300;
+  }
+
+  /* ── Progress Bar ── */
+  .progress-bar {
+    @apply h-2 bg-white/10 rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-gradient-to-r from-xpos-600 to-accent-cyan rounded-full transition-all duration-500;
+  }
+
+  /* ── Glow Effect ── */
+  .glow {
+    box-shadow: 0 0 40px rgba(92, 124, 250, 0.15);
+  }
+
+  .glow-strong {
+    box-shadow: 0 0 60px rgba(92, 124, 250, 0.25), 0 0 120px rgba(92, 124, 250, 0.1);
+  }
+
+  /* ── Grid Pattern ── */
+  .grid-pattern {
+    background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+    background-size: 40px 40px;
+  }
+
+  /* ── Code Display ── */
+  .code-digit {
+    @apply w-14 h-16 bg-white/5 border-2 border-white/20 rounded-xl flex items-center 
+           justify-center text-3xl font-mono font-bold text-white;
+  }
+
+  .code-digit.filled {
+    @apply border-xpos-500 bg-xpos-600/10 text-xpos-300;
+  }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
+}
+
+/* ── Page transitions ── */
+.page-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.4s ease-out;
+}

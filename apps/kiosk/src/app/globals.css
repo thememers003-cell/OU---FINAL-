@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { -webkit-tap-highlight-color: transparent; }
+  body {
+    @apply bg-dark-950 text-white font-sans antialiased;
+    background: linear-gradient(180deg, #020617 0%, #0f172a 50%, #020617 100%);
+    min-height: 100vh;
+    cursor: none; /* Hide cursor for touchscreen kiosk */
+    user-select: none;
+    overflow: hidden;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .btn-kiosk {
+    @apply px-12 py-8 text-2xl font-bold rounded-3xl transition-all duration-200 flex items-center justify-center gap-4;
+    min-height: 100px;
+  }
+
+  .btn-kiosk:active { transform: scale(0.97); }
+
+  .btn-kiosk-primary {
+    @apply btn-kiosk bg-gradient-to-r from-xpos-600 to-xpos-500 text-white;
+    box-shadow: 0 8px 30px rgba(92, 124, 250, 0.4);
+  }
+
+  .btn-kiosk-secondary {
+    @apply btn-kiosk bg-white/5 border-2 border-white/20 text-white;
+  }
+
+  .numpad-btn {
+    @apply w-full aspect-square rounded-2xl bg-white/5 border border-white/10 text-white 
+           text-4xl font-bold flex items-center justify-center transition-all duration-150;
+  }
+  .numpad-btn:active { @apply bg-white/15; transform: scale(0.95); }
+
+  .code-digit-kiosk {
+    @apply w-20 h-24 bg-white/5 border-2 border-white/20 rounded-2xl flex items-center 
+           justify-center text-5xl font-mono font-bold text-white;
+  }
+  .code-digit-kiosk.filled { @apply border-xpos-500 bg-xpos-600/10 text-xpos-300; }
+
+  .glow-strong {
+    box-shadow: 0 0 60px rgba(92, 124, 250, 0.25), 0 0 120px rgba(92, 124, 250, 0.1);
+  }
+}

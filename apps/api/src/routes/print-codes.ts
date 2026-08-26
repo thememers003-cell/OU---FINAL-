@@ -1,0 +1,365 @@
+// ============================================================
+// Print Codes — Generate and verify 6-digit print codes
+// ============================================================
+
+import { Router, Request, Response } from 'express';
+import * as crypto from 'crypto';
+
+const router = Router();
+
+/**
+ * Generate a cryptographically random 6-digit numeric code
+ * Range: 100000-999999 (avoids leading zeros)
+ */
+function generatePrintCode(length: number = 6): string {
+  const min = Math.pow(10, length - 1);
+  const max = Math.pow(10, length) - 1;
+  const range = max - min + 1;
+
+  // Use crypto for randomness
+  const randomBytes = crypto.randomBytes(4);
+  const randomNum = randomBytes.readUInt32BE(0);
+  const code = min + (randomNum % range);
+
+  return code.toString();
+}
+
+/**
+ * Hash a print code with SHA-256
+ */
+function hashCode(code: string): string {
+  return crypto.createHash('sha256').update(code).digest('hex');
+}
+
+// Generate a print code after payment
+router.post('/generate', async (req: Request, res: Response) => {
+  try {
+    const prisma = req.app.locals.prisma;
+    const { jobId, allowedKioskId } = req.body;
+
+    if (!jobId) {
+      return res.status(400).json({ success: false, error: 'Job ID required' });
+    }
+
+    // Get job
+    const job = await prisma.printJob.findFirst({
+      where: { OR: [{ id: jobId }, { displayId: jobId }] },
+      include: { payment: true },
+    });
+
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    // Verify payment is successful
+    if (!job.payment || job.payment.status !== 'PAID') {
+      return res.status(400).json({ success: false, error: 'Payment not verified' });
+    }
+
+    // Check if job is already completed
+    const existingCode = await prisma.printCode.findUnique({ where: { jobId: job.id } });
+    if (job.status === 'COMPLETED' || existingCode?.status === 'USED') {
+      return res.json({
+        success: true,
+        data: {
+          code: existingCode?.qrToken || null,
+          jobId: job.id,
+          displayId: job.displayId,
+          status: 'COMPLETED',
+          isCompleted: true,
+          expiresAt: existingCode?.expiresAt?.toISOString() || new Date().toISOString(),
+          remainingSeconds: 0,
+          allowedKioskId: existingCode?.allowedKioskId || null,
+        },
+      });
+    }
+
+    // If active code already exists, ALWAYS return existing code without generating a new one
+    if (existingCode && existingCode.qrToken) {
+      return res.json({
+        success: true,
+        data: {
+          code: existingCode.qrToken,
+          jobId: job.id,
+          displayId: job.displayId,
+          status: existingCode.status,
+          expiresAt: existingCode.expiresAt.toISOString(),
+          remainingSeconds: Math.max(0, Math.floor((existingCode.expiresAt.getTime() - Date.now()) / 1000)),
+          allowedKioskId: existingCode.allowedKioskId,
+        },
+      });
+    }
+
+    // Generate new code (Valid for 24 Hours)
+    const expiryMinutes = parseInt(process.env.PRINT_CODE_EXPIRY_MINUTES || '1440');
+    const code = generatePrintCode(parseInt(process.env.PRINT_CODE_LENGTH || '6'));
+    const codeHash = hashCode(code);
+    const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
+
+    // Resolve allowed kiosk ID
+    let resolvedKioskId = null;
+    if (allowedKioskId) {
+      const kiosk = await prisma.kiosk.findFirst({
+        where: { OR: [{ id: allowedKioskId }, { displayId: allowedKioskId }] },
+      });
+      resolvedKioskId = kiosk?.id || null;
+    }
+
+    // Delete old code if exists
+    if (existingCode) {
+      await prisma.printCode.deleteMany({ where: { jobId: job.id } });
+    }
+
+    // Create or update print code record (upsert handles duplicate jobId)
+    const printCode = await prisma.printCode.upsert({
+      where: { jobId: job.id },
+      update: {
+        codeHash,
+        qrToken: code,
+        status: 'ACTIVE',
+        allowedKioskId: resolvedKioskId,
+        expiresAt,
+      },
+      create: {
+        codeHash,
+        qrToken: code,
+        jobId: job.id,
+        status: 'ACTIVE',
+        allowedKioskId: resolvedKioskId,
+        expiresAt,
+      },
+    });
+
+    // Update job
+    await prisma.printJob.update({
+      where: { id: job.id },
+      data: { status: 'QUEUED', printMethod: 'CODE' },
+    });
+
+    // Notify real-time Admin Portal with the generated 6-digit code
+    const io = req.app.locals.io;
+    if (io) {
+      io.to('admin').emit('job_updated', {
+        id: job.id,
+        displayId: job.displayId,
+        status: 'QUEUED',
+        printCode: code,
+        printCodeStatus: 'ACTIVE',
+        totalPrice: job.totalPrice,
+        paymentStatus: 'PAID',
+        fileName: job.file?.originalName,
+        createdAt: job.createdAt.toISOString(),
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        code, // Only time the raw code is returned!
+        jobId: job.id,
+        displayId: job.displayId,
+        status: 'ACTIVE',
+        expiresAt: expiresAt.toISOString(),
+        remainingSeconds: expiryMinutes * 60,
+        allowedKioskId: resolvedKioskId,
+      },
+    });
+  } catch (error) {
+    console.error('Code generation error:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate print code' });
+  }
+});
+
+// Verify a print code (called by kiosk)
+router.post('/verify', async (req: Request, res: Response) => {
+  try {
+    const prisma = req.app.locals.prisma;
+    const io = req.app.locals.io;
+    const storage = req.app.locals.storage;
+    const { code, kioskId } = req.body;
+
+    if (!code || !kioskId) {
+      return res.status(400).json({ success: false, error: 'Code and kiosk ID required' });
+    }
+
+    // Hash the provided code
+    const codeHash = hashCode(code);
+
+    // Find print code
+    const printCode = await prisma.printCode.findUnique({
+      where: { codeHash },
+      include: {
+        job: {
+          include: {
+            file: true,
+            payment: true,
+          },
+        },
+      },
+    });
+
+    if (!printCode) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invalid print code. Please check and try again.',
+      });
+    }
+
+    // Check if already used or already printing/completed
+    if (printCode.status === 'USED' || printCode.job.status === 'COMPLETED' || printCode.job.status === 'PRINTING') {
+      const statusText = printCode.job.status === 'COMPLETED' ? 'already printed' : 'currently printing';
+      return res.status(400).json({
+        success: false,
+        error: `This document is ${statusText}. Please collect it from the printer tray.`,
+      });
+    }
+
+    // Check if expired
+    if (printCode.status === 'EXPIRED' || new Date() > printCode.expiresAt) {
+      // Mark as expired if not already
+      if (printCode.status !== 'EXPIRED') {
+        await prisma.printCode.update({
+          where: { id: printCode.id },
+          data: { status: 'EXPIRED' },
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'This print code has expired. Please create a new print job.',
+      });
+    }
+
+    // Check payment
+    if (!printCode.job.payment || printCode.job.payment.status !== 'PAID') {
+      return res.status(400).json({
+        success: false,
+        error: 'Payment not verified for this print job.',
+      });
+    }
+
+    // Resolve kiosk (or auto-register default kiosk)
+    let kiosk = await prisma.kiosk.findFirst({
+      where: {
+        OR: [{ id: kioskId }, { displayId: kioskId }],
+      },
+      include: { printer: true },
+    });
+
+    if (!kiosk) {
+      kiosk = await prisma.kiosk.create({
+        data: {
+          displayId: kioskId,
+          name: `XPOS Station ${kioskId}`,
+          location: 'Self-Service Station',
+          status: 'ACTIVE',
+        },
+        include: { printer: true },
+      });
+    }
+
+    // Check if code is restricted to a specific kiosk
+    if (printCode.allowedKioskId && printCode.allowedKioskId !== kiosk.id) {
+      return res.status(403).json({
+        success: false,
+        error: 'This print code is not valid for this kiosk.',
+      });
+    }
+
+    // Check printer availability
+    if (kiosk.printer && kiosk.printer.status !== 'READY') {
+      if (process.env.PRINTER_SERVICE === 'mock' || process.env.NODE_ENV !== 'production') {
+        await prisma.printer.update({
+          where: { id: kiosk.printer.id },
+          data: { status: 'READY' },
+        });
+      } else {
+        return res.status(503).json({
+          success: false,
+          error: `Printer is currently ${kiosk.printer?.status || 'unavailable'}. Please try again.`,
+        });
+      }
+    }
+
+    // Check job is valid
+    if (printCode.job.status === 'COMPLETED' || printCode.job.status === 'CANCELLED') {
+      return res.status(400).json({
+        success: false,
+        error: `This print job is already ${printCode.job.status.toLowerCase()}.`,
+      });
+    }
+
+    // ✅ ALL CHECKS PASSED — Create secure authorization
+
+    // Generate temporary signed download URL
+    const downloadUrl = await storage.getSignedUrl(printCode.job.file.storageKey, 300);
+
+    // Mark printCode as USED immediately so it cannot be double-entered
+    await prisma.printCode.update({
+      where: { id: printCode.id },
+      data: {
+        status: 'USED',
+        usedAt: new Date(),
+      },
+    });
+
+    // Update job with kiosk assignment
+    await prisma.printJob.update({
+      where: { id: printCode.job.id },
+      data: {
+        kioskId: kiosk.id,
+        status: 'SENDING',
+      },
+    });
+
+    // Notify customer that code was verified
+    io.to(`session:${printCode.job.sessionId}`).emit('job_update', {
+      type: 'JOB_UPDATE',
+      jobId: printCode.job.id,
+      displayId: printCode.job.displayId,
+      status: 'SENDING',
+      kiosk: {
+        displayId: kiosk.displayId,
+        name: kiosk.name,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        action: 'CODE_VERIFIED',
+        entityType: 'PrintCode',
+        entityId: printCode.id,
+        kioskId: kiosk.id,
+        details: JSON.stringify({ jobDisplayId: printCode.job.displayId }),
+      },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        verified: true,
+        jobId: printCode.job.id,
+        displayId: printCode.job.displayId,
+        downloadUrl,
+        downloadExpiresAt: new Date(Date.now() + 300000).toISOString(),
+        printSettings: {
+          colorMode: printCode.job.colorMode,
+          paperSize: printCode.job.paperSize,
+          sides: printCode.job.sides,
+          copies: printCode.job.copies,
+          pageRange: printCode.job.pageRange,
+          totalPages: printCode.job.totalPages,
+        },
+        file: {
+          originalName: printCode.job.file.originalName,
+          mimeType: printCode.job.file.mimeType,
+          pageCount: printCode.job.file.pageCount,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Code verification error:', error);
+    res.status(500).json({ success: false, error: 'Failed to verify print code' });
+  }
+});
+
+export { router as printCodeRoutes };

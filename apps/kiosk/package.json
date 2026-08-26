@@ -1,0 +1,33 @@
+{
+  "name": "@xpos/kiosk",
+  "version": "1.0.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3002",
+    "build": "next build",
+    "start": "next start -p 3002",
+    "electron": "electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@xpos/types": "*",
+    "framer-motion": "^11.5.0",
+    "html5-qrcode": "^2.3.8",
+    "lucide-react": "^0.441.0",
+    "next": "^14.2.0",
+    "qrcode.react": "^4.0.1",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "socket.io-client": "^4.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.0",
+    "electron": "^32.0.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.5.0"
+  }
+}

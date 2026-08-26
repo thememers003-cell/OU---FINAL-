@@ -1,0 +1,271 @@
+// ============================================================
+// XPOS Database Schema
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Kiosks ──
+model Kiosk {
+  id             String       @id @default(uuid())
+  displayId      String       @unique // XPOS-001, XPOS-002...
+  name           String
+  location       String
+  status         String       @default("ACTIVE") // ACTIVE, MAINTENANCE, DISABLED
+  qrUrl          String?
+  deviceTokenHash String?
+  lastHeartbeat  DateTime?
+  cpu            Float?
+  ram            Float?
+  disk           Float?
+  appVersion     String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  printer        Printer?
+  sessions       Session[]
+  printJobs      PrintJob[]
+  printCodes     PrintCode[]  @relation("AllowedKiosk")
+  auditLogs      AuditLog[]
+
+  @@map("kiosks")
+}
+
+// ── Printers ──
+model Printer {
+  id             String       @id @default(uuid())
+  name           String
+  model          String?
+  status         String       @default("READY") // READY, PRINTING, OFFLINE, OUT_OF_PAPER, ERROR
+  kioskId        String       @unique
+  currentJobId   String?
+  lastError      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  kiosk          Kiosk        @relation(fields: [kioskId], references: [id])
+
+  @@map("printers")
+}
+
+// ── Sessions (anonymous customer sessions) ──
+model Session {
+  id             String       @id @default(uuid())
+  kioskId        String?
+  printMethod    String?      // QR, CODE
+  createdAt      DateTime     @default(now())
+  expiresAt      DateTime
+
+  kiosk          Kiosk?       @relation(fields: [kioskId], references: [id])
+  files          File[]
+  printJobs      PrintJob[]
+
+  @@map("sessions")
+}
+
+// ── Files ──
+model File {
+  id             String       @id @default(uuid())
+  originalName   String
+  mimeType       String
+  sizeBytes      Int
+  pageCount      Int          @default(0)
+  storageKey     String       // MinIO object key
+  thumbnailKeys  String?
+  sessionId      String
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  session        Session      @relation(fields: [sessionId], references: [id])
+  printJobs      PrintJob[]
+
+  @@map("files")
+}
+
+// ── Print Jobs (central — both QR and CODE converge here) ──
+model PrintJob {
+  id             String       @id @default(uuid())
+  displayId      String       @unique // XP-000001
+  jobNumber      Int          @default(0)
+  sessionId      String
+  fileId         String
+  kioskId        String?
+  printMethod    String       // QR, CODE
+  status         String       @default("CREATED") // CREATED, PAYMENT_PENDING, PAYMENT_PROCESSING, PAID, PAYMENT_FAILED, QUEUED, SENDING, PRINTING, COMPLETED, PRINT_FAILED, CANCELLED, REFUND_PENDING, REFUNDED
+  colorMode      String       // BW, COLOR
+  paperSize      String       @default("A4")
+  sides          String       @default("SINGLE") // SINGLE, DOUBLE
+  copies         Int          @default(1)
+  pageRange      String?      // null = all, "1-5,8,10-12"
+  totalPages     Int
+  totalPrice     Float
+  currentPage    Int          @default(0)
+  printedPages   Int          @default(0)
+  failedAtPage   Int?
+  printAttempts  Int          @default(0)
+  printIdempotencyKey String? @unique
+  errorMessage   String?
+  errorCode      String?
+  createdAt      DateTime     @default(now())
+  completedAt    DateTime?
+  updatedAt      DateTime     @updatedAt
+
+  session        Session      @relation(fields: [sessionId], references: [id])
+  file           File         @relation(fields: [fileId], references: [id])
+  kiosk          Kiosk?       @relation(fields: [kioskId], references: [id])
+  payment        Payment?
+  printCode      PrintCode?
+
+  @@map("print_jobs")
+}
+
+// ── Payments ──
+model Payment {
+  id             String       @id @default(uuid())
+  jobId          String       @unique
+  amount         Float
+  currency       String       @default("INR")
+  status         String       @default("CREATED") // CREATED, PAYMENT_PENDING, PAYMENT_PROCESSING, PAID, PAYMENT_FAILED, PAYMENT_EXPIRED, REFUND_PENDING, REFUNDED
+  provider       String       @default("mock")
+  providerRef    String?
+  providerOrderId String?
+  idempotencyKey String?      @unique
+  qrData         String?
+  webhookEventId String?      @unique
+  failureReason  String?
+  attempts       Int          @default(0)
+  expiresAt      DateTime?
+  verifiedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  job            PrintJob     @relation(fields: [jobId], references: [id])
+  refunds        Refund[]
+
+  @@map("payments")
+}
+
+// ── Refunds ──
+model Refund {
+  id             String       @id @default(uuid())
+  paymentId      String
+  amount         Float
+  status         String       @default("INITIATED") // INITIATED, SUCCESS, FAILED
+  reason         String?
+  processedBy    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  payment        Payment      @relation(fields: [paymentId], references: [id])
+
+  @@map("refunds")
+}
+
+// ── Print Codes ──
+model PrintCode {
+  id             String       @id @default(uuid())
+  codeHash       String       @unique // SHA-256 hash
+  qrToken        String?      @unique
+  qrTokenHash    String?      @unique
+  jobId          String       @unique
+  status         String       @default("ACTIVE") // ACTIVE, USED, EXPIRED, LOCKED
+  allowedKioskId String?      // null = any kiosk
+  organizationId String?
+  failedAttempts Int          @default(0)
+  lockedUntil    DateTime?
+  redeemedByKioskId String?
+  createdAt      DateTime     @default(now())
+  expiresAt      DateTime
+  usedAt         DateTime?
+
+  job            PrintJob     @relation(fields: [jobId], references: [id])
+  allowedKiosk   Kiosk?       @relation("AllowedKiosk", fields: [allowedKioskId], references: [id])
+
+  @@map("print_codes")
+}
+
+// ── Pricing Rules ──
+model PricingRule {
+  id             String       @id @default(uuid())
+  paperSize      String       @default("A4")
+  colorMode      String       // BW, COLOR
+  pricePerPage   Float
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([paperSize, colorMode])
+  @@map("pricing_rules")
+}
+
+// ── Audit Logs ──
+model AuditLog {
+  id             String       @id @default(uuid())
+  action         String
+  entityType     String
+  entityId       String
+  details        String?
+  kioskId        String?
+  createdAt      DateTime     @default(now())
+
+  kiosk          Kiosk?       @relation(fields: [kioskId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ── Admin Users ──
+model AdminUser {
+  id             String       @id @default(uuid())
+  email          String       @unique
+  passwordHash   String
+  name           String
+  role           String       @default("admin")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("admin_users")
+}
+
+// ── Settings ──
+model Setting {
+  id             String       @id @default(uuid())
+  key            String       @unique
+  value          String
+  description    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("settings")
+}
+
+// ── Payment Events ──
+model PaymentEvent {
+  id             String       @id @default(uuid())
+  eventId        String       @unique
+  paymentId      String?
+  eventType      String
+  rawPayload     String
+  processed      Boolean      @default(false)
+  processedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  
+  @@map("payment_events")
+}
+
+// ── Security Events ──
+model SecurityEvent {
+  id             String       @id @default(uuid())
+  eventType      String
+  kioskId        String?
+  ipAddress      String?
+  details        String?
+  createdAt      DateTime     @default(now())
+  
+  @@map("security_events")
+}
