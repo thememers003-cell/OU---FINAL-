@@ -381,7 +381,7 @@ function CodeContent() {
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500 font-bold">Total Pages</span>
-                </span>
+                <span className="text-slate-900 font-black">{jobInfo?.totalPages || 1} pages</span>
               </div>
             </div>
 
