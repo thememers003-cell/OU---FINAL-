@@ -242,8 +242,16 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
       data: updateData,
     });
 
-    // Notify customer via WebSocket
+    // Notify customer via WebSocket (both session room and broadcast)
     io.to(`session:${job.sessionId}`).emit('job_update', {
+      type: 'JOB_UPDATE',
+      jobId: job.id,
+      displayId: job.displayId,
+      status,
+      currentPage,
+      totalPages: job.totalPages,
+    });
+    io.emit('job_update', {
       type: 'JOB_UPDATE',
       jobId: job.id,
       displayId: job.displayId,

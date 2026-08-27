@@ -204,13 +204,23 @@ export default function KioskApp() {
     }, intervalMs);
   };
 
-  // ── Handle Job Completed (Auto-redirect in 7 Seconds) ──
-  const handleJobCompleted = () => {
+  // ── Handle Job Completed (Auto-redirect in 7 Seconds & Sync with Backend) ──
+  const handleJobCompleted = (completedJobId?: string) => {
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     playKeySound('success');
     setCurrentCompletionLine(getRandomCompletionLine());
     setScreen('completed');
     setCountdown(7);
+
+    const activeJobId = completedJobId || jobData?.jobId;
+    if (activeJobId) {
+      // Sync completion with cloud backend so customer screen instantly transitions to PRINT COMPLETED 🎉
+      fetch(`${getApiUrl()}/api/jobs/${activeJobId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      }).catch((e) => console.warn('Completion sync to backend:', e));
+    }
 
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
 
@@ -289,7 +299,7 @@ export default function KioskApp() {
 
         // Simulate complete after physical print duration
         setTimeout(() => {
-          handleJobCompleted();
+          handleJobCompleted(jobId);
         }, Math.max(5000, totalPages * 1200));
 
       } else {

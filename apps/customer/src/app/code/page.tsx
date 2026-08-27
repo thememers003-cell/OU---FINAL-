@@ -34,6 +34,8 @@ function CodeContent() {
     setCompletionLine(getRandomCompletionLine());
   }, []);
 
+  const [resolvedJobId, setResolvedJobId] = useState<string | null>(jobId || null);
+
   // ── Load directly from API (Zero cross-job caching bugs) ──
   useEffect(() => {
     if (!jobId && !displayId) {
@@ -50,6 +52,7 @@ function CodeContent() {
           setCode(parsed.code);
           if (parsed.expiresAt) setExpiresAt(new Date(parsed.expiresAt));
           if (parsed.jobInfo) setJobInfo(parsed.jobInfo);
+          if (parsed.jobId) setResolvedJobId(parsed.jobId);
           setLoading(false);
         }
       }
@@ -63,6 +66,7 @@ function CodeContent() {
           const jobLookup = await getJob(displayId);
           if (jobLookup.success && jobLookup.data?.id) {
             activeJobId = jobLookup.data.id;
+            setResolvedJobId(activeJobId);
             setJobInfo(jobLookup.data);
             setJobStatus(jobLookup.data.status);
           }
@@ -73,6 +77,8 @@ function CodeContent() {
           setLoading(false);
           return;
         }
+
+        setResolvedJobId(activeJobId);
 
         const res = await generatePrintCode(activeJobId);
         if (res.success && res.data) {
@@ -116,14 +122,15 @@ function CodeContent() {
     loadCode();
   }, [jobId, displayId]);
 
-  // ── Real-time Job Status Polling ──
+  // ── Real-time Job Status Polling & WebSocket Live Push ──
   useEffect(() => {
-    if (!jobId) return;
+    const targetJobId = resolvedJobId || jobId || displayId;
+    if (!targetJobId) return;
 
     let isSubscribed = true;
     const checkStatus = async () => {
       try {
-        const res = await getJob(jobId);
+        const res = await getJob(targetJobId);
         if (res.success && res.data && isSubscribed) {
           const currentStatus = res.data.status;
           setJobStatus(currentStatus);
@@ -135,19 +142,49 @@ function CodeContent() {
           }
           if (currentStatus === 'COMPLETED') {
             try {
-              localStorage.removeItem(`xpos_code_${jobId}`);
+              localStorage.removeItem(`xpos_code_${targetJobId}`);
             } catch {}
           }
         }
       } catch {}
     };
 
-    const interval = setInterval(checkStatus, 1500);
+    // Polling every 1 second for ultra-fast customer screen updates
+    const interval = setInterval(checkStatus, 1000);
+    checkStatus();
+
+    // WebSocket listener for instant zero-latency push
+    let socket: any = null;
+    try {
+      const { connectSocket } = require('../../lib/socket');
+      socket = connectSocket();
+      socket.on('job_update', (data: any) => {
+        if (
+          data &&
+          isSubscribed &&
+          (data.jobId === targetJobId || data.displayId === targetJobId || data.jobId === resolvedJobId)
+        ) {
+          if (data.status) {
+            setJobStatus(data.status);
+            if (data.status === 'COMPLETED') {
+              playKeySound('success');
+            }
+          }
+          if (data.kiosk?.displayId) {
+            setPrintedKiosk(data.kiosk.displayId);
+          }
+        }
+      });
+    } catch {}
+
     return () => {
       isSubscribed = false;
       clearInterval(interval);
+      if (socket) {
+        socket.off('job_update');
+      }
     };
-  }, [jobId]);
+  }, [resolvedJobId, jobId, displayId]);
 
   // ── Countdown Timer (24-Hour Handler) ──
   useEffect(() => {
