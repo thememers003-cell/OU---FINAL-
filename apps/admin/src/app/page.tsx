@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BarChart3,
+  LayoutDashboard,
   Printer,
   DollarSign,
   FileText,
@@ -13,12 +13,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  TrendingUp,
   Radio,
-  Wifi,
-  Activity,
-  Cpu,
-  HardDrive,
   Plus,
   X,
   MapPin,
@@ -28,13 +23,21 @@ import {
   RotateCcw,
   Sparkles,
   ShieldAlert,
-  Sliders,
   Download,
   Eye,
   Layers,
   FileCheck,
   Zap,
-  Power
+  Power,
+  ChevronRight,
+  TrendingUp,
+  Activity,
+  ArrowUpRight,
+  Sliders,
+  Bell,
+  Settings,
+  Database,
+  Cpu
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { getApiUrl } from '../lib/api';
@@ -133,13 +136,11 @@ export default function SuperAdminRootPage() {
 
   const socketRef = useRef<Socket | null>(null);
 
-  // ── Show Temporary Notification ──
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setActionMessage({ type, text });
     setTimeout(() => setActionMessage(null), 4000);
   };
 
-  // ── Fetch All Admin Data ──
   const fetchData = useCallback(async () => {
     try {
       const baseUrl = getApiUrl();
@@ -163,14 +164,12 @@ export default function SuperAdminRootPage() {
     }
   }, [statusFilter, searchQuery]);
 
-  // Initial fetch and polling
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 4000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  // ── WebSocket Real-Time Listener ──
   useEffect(() => {
     const socket = io(getApiUrl(), { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
@@ -191,7 +190,7 @@ export default function SuperAdminRootPage() {
 
   // ── Action Handlers ──
   const handleCancelJob = async (jobId: string) => {
-    if (!confirm('Are you sure you want to cancel this print job and revoke its code?')) return;
+    if (!confirm('Cancel this print job and revoke its 6-digit release code?')) return;
     setActionLoading(jobId);
     try {
       const res = await fetch(`${getApiUrl()}/api/admin/jobs/${jobId}/cancel`, {
@@ -213,25 +212,6 @@ export default function SuperAdminRootPage() {
     }
   };
 
-  const handleRevokeCode = async (code: string) => {
-    if (!confirm(`Revoke 6-digit release code ${code}?`)) return;
-    setActionLoading(code);
-    try {
-      const res = await fetch(`${getApiUrl()}/api/admin/codes/${code}/revoke`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        showToast(`Code ${code} revoked`);
-        fetchData();
-      } else {
-        showToast(data.error || 'Failed to revoke code', 'error');
-      }
-    } catch (e: any) {
-      showToast(e.message || 'Network error', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   const handleExtendCode = async (code: string) => {
     setActionLoading(code);
     try {
@@ -242,7 +222,7 @@ export default function SuperAdminRootPage() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Code extended by +24 Hours`);
+        showToast(`Code ${code} extended by +24 Hours`);
         fetchData();
       } else {
         showToast(data.error || 'Failed to extend code', 'error');
@@ -255,7 +235,7 @@ export default function SuperAdminRootPage() {
   };
 
   const handleDeleteJob = async (jobId: string, displayId: string) => {
-    if (!confirm(`Are you sure you want to permanently delete job ${displayId}? This action cannot be undone.`)) return;
+    if (!confirm(`Are you sure you want to permanently delete job ${displayId}?`)) return;
     setActionLoading(`delete-${jobId}`);
     try {
       const res = await fetch(`${getApiUrl()}/api/admin/jobs/${jobId}`, { method: 'DELETE' });
@@ -298,7 +278,7 @@ export default function SuperAdminRootPage() {
   };
 
   const handleRebootKiosk = async (kioskId: string, displayId: string) => {
-    if (!confirm(`Send remote reboot command to Station ${displayId}?`)) return;
+    if (!confirm(`Send remote reboot signal to Station ${displayId}?`)) return;
     setActionLoading(kioskId);
     try {
       const res = await fetch(`${getApiUrl()}/api/admin/kiosks/${kioskId}/reboot`, { method: 'POST' });
@@ -326,12 +306,12 @@ export default function SuperAdminRootPage() {
         body: JSON.stringify({
           displayId: newKioskDisplayId.trim().toUpperCase(),
           name: newKioskName.trim() || `XPOS Station ${newKioskDisplayId.trim().toUpperCase()}`,
-          location: newKioskLocation.trim() || 'Main Hall',
+          location: newKioskLocation.trim() || 'Main Campus',
         }),
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Kiosk ${newKioskDisplayId.toUpperCase()} added successfully!`);
+        showToast(`Kiosk ${newKioskDisplayId.toUpperCase()} registered!`);
         setShowAddKioskModal(false);
         setNewKioskDisplayId('');
         setNewKioskName('');
@@ -403,7 +383,7 @@ export default function SuperAdminRootPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `XPOS_Jobs_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `XPOS_Jobs_Report_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -412,595 +392,621 @@ export default function SuperAdminRootPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'COMPLETED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><CheckCircle2 className="w-3.5 h-3.5" /> COMPLETED</span>;
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> COMPLETED</span>;
       case 'PRINTING':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse"><Printer className="w-3.5 h-3.5" /> PRINTING</span>;
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-sky-50 text-sky-700 border border-sky-300 animate-pulse shadow-sm"><Printer className="w-3.5 h-3.5 text-sky-600" /> PRINTING</span>;
       case 'QUEUED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-500/10 text-amber-400 border border-amber-500/20"><Clock className="w-3.5 h-3.5" /> CODE ACTIVE</span>;
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-700 border border-amber-300 shadow-sm"><Clock className="w-3.5 h-3.5 text-amber-600" /> CODE ACTIVE</span>;
       case 'CANCELLED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-500/10 text-slate-400 border border-slate-500/20"><Ban className="w-3.5 h-3.5" /> CANCELLED</span>;
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-600 border border-slate-200"><Ban className="w-3.5 h-3.5 text-slate-400" /> CANCELLED</span>;
       case 'FAILED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-500/10 text-rose-400 border border-rose-500/20"><XCircle className="w-3.5 h-3.5" /> FAILED</span>;
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-50 text-rose-700 border border-rose-200"><XCircle className="w-3.5 h-3.5 text-rose-600" /> FAILED</span>;
       default:
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-800 text-slate-300">{status}</span>;
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-700">{status}</span>;
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0f1d] text-slate-100 font-sans selection:bg-blue-500 selection:text-white pb-20">
-      {/* ── Top Super Admin Navigation Bar ── */}
-      <header className="sticky top-0 z-40 bg-[#0d1527]/90 backdrop-blur-xl border-b border-slate-800/80 px-4 md:px-8 py-3.5">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
-              <Zap className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/40 to-blue-50/30 text-slate-800 font-sans antialiased selection:bg-sky-500 selection:text-white flex">
+      {/* ── DESKTOP SLEEK SIDEBAR ── */}
+      <aside className="w-64 bg-white/80 backdrop-blur-2xl border-r border-sky-100/80 p-5 flex flex-col justify-between hidden lg:flex shrink-0 shadow-sm sticky top-0 h-screen z-30">
+        <div className="space-y-6">
+          {/* Logo & Brand Header */}
+          <div className="flex items-center gap-3 px-2 py-1">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/25 text-white">
+              <Zap className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg md:text-xl font-black text-white tracking-tight">XPOS SUPER ADMIN</h1>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-md border border-blue-500/30">
-                  Direct Control Center
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-lg text-slate-900 tracking-tight">XPOS</span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-sky-100 text-sky-700 rounded-md border border-sky-200">
+                  Cloud Admin
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Enterprise Cloud Fleet & Print Management</p>
+              <p className="text-[11px] text-slate-400 font-semibold">Enterprise Command Center</p>
             </div>
           </div>
 
+          {/* Navigation Links */}
+          <nav className="space-y-1.5">
+            {[
+              { id: 'overview', label: 'Dashboard Overview', icon: LayoutDashboard },
+              { id: 'jobs', label: 'Live Print Queue & Codes', icon: Printer },
+              { id: 'kiosks', label: 'Kiosk Fleet & Hardware', icon: Radio },
+              { id: 'pricing', label: 'Pricing Matrix Engine', icon: DollarSign },
+              { id: 'logs', label: 'Audit Trail & Telemetry', icon: Activity },
+            ].map(item => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as any)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-xs transition-all ${
+                    isActive
+                      ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/30'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-sky-50/80'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Sidebar Footer / System Pulse */}
+        <div className="bg-sky-50/70 border border-sky-100 p-4 rounded-2xl space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-bold">Cloud WebSockets</span>
+            <span className={`flex items-center gap-1.5 font-bold ${isLiveConnected ? 'text-emerald-600' : 'text-amber-600'}`}>
+              <span className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'}`} />
+              {isLiveConnected ? 'Online' : 'Connecting'}
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-400 font-medium truncate">
+            Neon PostgreSQL Active
+          </div>
+        </div>
+      </aside>
+
+      {/* ── MAIN CONTENT AREA (Spacious Desktop First) ── */}
+      <div className="flex-1 flex flex-col min-w-0 pb-16">
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl border-b border-sky-100/80 px-6 lg:px-10 py-4 flex items-center justify-between gap-4 shadow-sm">
+          <div>
+            <h1 className="text-xl font-black text-slate-900 capitalize tracking-tight">
+              {activeTab === 'overview' && 'Executive Fleet Dashboard'}
+              {activeTab === 'jobs' && 'Live Print Queue & 6-Digit Codes'}
+              {activeTab === 'kiosks' && 'Kiosk Stations & Hardware Fleet'}
+              {activeTab === 'pricing' && 'Dynamic Pricing Matrix'}
+              {activeTab === 'logs' && 'Security & System Audit Trail'}
+            </h1>
+            <p className="text-xs text-slate-400">Real-time status synced with Render cloud backend</p>
+          </div>
+
           <div className="flex items-center gap-3">
-            {/* Live WebSocket Status Pulse */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
-              isLiveConnected
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
-              <span>{isLiveConnected ? 'Cloud WebSockets: LIVE' : 'Reconnecting...'}</span>
-            </div>
-
-            {/* Emergency Stop Button */}
-            <button
-              onClick={() => setShowEmergencyModal(true)}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-xs font-black transition-all active:scale-95 shadow-sm"
-            >
-              <ShieldAlert className="w-4 h-4" />
-              <span>EMERGENCY STOP</span>
-            </button>
-
-            {/* Refresh Button */}
+            {/* Quick Refresh */}
             <button
               onClick={fetchData}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all active:scale-95"
+              className="p-2.5 rounded-2xl bg-white hover:bg-sky-50 text-slate-600 border border-sky-100 shadow-sm transition-all active:scale-95"
               title="Refresh Data"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
-          </div>
-        </div>
-      </header>
 
-      {/* ── Toast Notification ── */}
-      <AnimatePresence>
-        {actionMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={`fixed top-18 right-6 z-50 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border text-sm font-bold ${
-              actionMessage.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200'
-                : 'bg-rose-950/90 border-rose-500/40 text-rose-200'
-            }`}
-          >
-            {actionMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
-            <span>{actionMessage.text}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-6 space-y-6">
-        {/* ── High-Level Metric Cards ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Revenue */}
-          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
-            <div className="flex justify-between items-start mb-3">
-              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Today's Revenue</span>
-              <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <DollarSign className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-white mb-1">
-              ₹{stats?.today.revenue || 0}
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span className="text-emerald-400 font-bold">All-time: ₹{stats?.today.allTimeRevenue || 0}</span>
-            </div>
-            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
-          </div>
-
-          {/* Active 6-Digit Codes */}
-          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
-            <div className="flex justify-between items-start mb-3">
-              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Active Release Codes</span>
-              <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                <Clock className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-amber-400 mb-1">
-              {stats?.today.activeCodes || 0} <span className="text-sm font-bold text-slate-400">Ready</span>
-            </div>
-            <div className="text-xs text-slate-400">Valid 24h for customer release</div>
-            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
-          </div>
-
-          {/* Completed Prints */}
-          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
-            <div className="flex justify-between items-start mb-3">
-              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Prints Delivered</span>
-              <div className="p-2.5 rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                <FileCheck className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-blue-400 mb-1">
-              {stats?.today.successful || 0} <span className="text-sm font-bold text-slate-400">({stats?.today.pages || 0} pgs)</span>
-            </div>
-            <div className="text-xs text-slate-400">{stats?.today.printJobs || 0} total requests created today</div>
-            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-blue-500/5 rounded-full blur-xl pointer-events-none" />
-          </div>
-
-          {/* Kiosk Fleet */}
-          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
-            <div className="flex justify-between items-start mb-3">
-              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Kiosk Stations</span>
-              <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                <Radio className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-indigo-400 mb-1">
-              {kiosks.filter(k => k.status === 'ACTIVE').length} / {kiosks.length}
-            </div>
-            <div className="text-xs text-slate-400">Stations Active in Cloud Fleet</div>
-            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
-          </div>
-        </div>
-
-        {/* ── Navigation Tabs ── */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
-          {[
-            { id: 'overview', label: '📊 Control Overview' },
-            { id: 'jobs', label: '🖨️ Jobs & 6-Digit Codes' },
-            { id: 'kiosks', label: '🖥️ Kiosk Stations Fleet' },
-            { id: 'pricing', label: '💰 Dynamic Pricing Matrix' },
-            { id: 'logs', label: '📜 Live Audit Logs' },
-          ].map(tab => (
+            {/* Emergency Stop Button */}
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-4 py-2.5 rounded-2xl font-black text-xs md:text-sm transition-all flex items-center gap-2 ${
-                activeTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                  : 'bg-[#131b2e] text-slate-400 hover:text-white border border-slate-800/80 hover:bg-slate-800'
+              onClick={() => setShowEmergencyModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-black transition-all active:scale-95 shadow-sm"
+            >
+              <ShieldAlert className="w-4 h-4 text-rose-600" />
+              <span>EMERGENCY STOP</span>
+            </button>
+          </div>
+        </header>
+
+        {/* ── Toast Notification ── */}
+        <AnimatePresence>
+          {actionMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className={`fixed top-20 right-8 z-50 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border text-sm font-bold ${
+                actionMessage.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  : 'bg-rose-50 border-rose-300 text-rose-800'
               }`}
             >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+              {actionMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertTriangle className="w-5 h-5 text-rose-600" />}
+              <span>{actionMessage.text}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* ── TAB 1 & 2: JOBS & CODES MANAGEMENT ── */}
-        {(activeTab === 'overview' || activeTab === 'jobs') && (
-          <div className="space-y-4">
-            {/* Search & Filter Bar */}
-            <div className="bg-[#131b2e] border border-slate-800 p-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">
-              <div className="relative flex-1 min-w-[240px]">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search by Job ID (XP-000001), Document Name, or 6-Digit Code..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-[#0a0f1d] border border-slate-700/80 rounded-2xl pl-10 pr-4 py-2.5 text-xs md:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
-                />
+        {/* Main Body */}
+        <main className="p-6 lg:p-10 max-w-[1700px] w-full mx-auto space-y-8">
+          {/* ── METRIC CARDS (Clean Light Blue & White Luxury) ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+            {/* Revenue */}
+            <div className="bg-white border border-sky-100 p-6 rounded-3xl shadow-xl shadow-sky-950/5 relative overflow-hidden transition-all hover:border-sky-300">
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Today's Revenue</span>
+                <div className="p-3 rounded-2xl bg-sky-50 text-sky-600 border border-sky-100">
+                  <DollarSign className="w-5 h-5" />
+                </div>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-slate-400">Filter Status:</span>
-                {['ALL', 'QUEUED', 'PRINTING', 'COMPLETED', 'CANCELLED'].map(st => (
-                  <button
-                    key={st}
-                    onClick={() => setStatusFilter(st)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                      statusFilter === st
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-800/80 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {st}
-                  </button>
-                ))}
-
-                <button
-                  onClick={exportJobsCSV}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all ml-2 active:scale-95"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export CSV</span>
-                </button>
+              <div className="text-3xl font-black text-slate-900 mb-1">
+                ₹{stats?.today.revenue || 0}
               </div>
+              <div className="text-xs font-bold text-sky-600 flex items-center gap-1">
+                <span>All-Time Total: ₹{stats?.today.allTimeRevenue || 0}</span>
+              </div>
+              <div className="absolute -bottom-8 -right-8 w-28 h-28 bg-sky-400/10 rounded-full blur-2xl pointer-events-none" />
             </div>
 
-            {/* Jobs Table */}
-            <div className="bg-[#131b2e] border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs md:text-sm">
-                  <thead className="bg-[#0e1628] text-slate-400 font-bold border-b border-slate-800 text-[11px] uppercase tracking-wider">
-                    <tr>
-                      <th className="p-4">Job ID / File</th>
-                      <th className="p-4">6-Digit Code</th>
-                      <th className="p-4">Settings</th>
-                      <th className="p-4">Price</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4">Kiosk</th>
-                      <th className="p-4">Time</th>
-                      <th className="p-4 text-right">Super Admin Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/80">
-                    {loading ? (
-                      <tr>
-                        <td colSpan={8} className="p-10 text-center text-slate-400">
-                          <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-2" />
-                          <span>Loading print queue & live codes...</span>
-                        </td>
-                      </tr>
-                    ) : jobs.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="p-10 text-center text-slate-400">
-                          No print jobs found matching filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      jobs.map(job => (
-                        <tr key={job.id} className="hover:bg-slate-800/40 transition-colors">
-                          <td className="p-4">
-                            <div className="font-mono font-black text-white text-sm">{job.displayId}</div>
-                            <div className="text-slate-400 text-xs truncate max-w-[180px] font-medium" title={job.fileName}>
-                              {job.fileName}
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            {job.printCode ? (
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono font-black text-base text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/30">
-                                  {job.printCode}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-slate-500 italic">None</span>
-                            )}
-                          </td>
-                          <td className="p-4">
-                            <div className="font-bold text-slate-300">{job.totalPages} pgs • {job.colorMode}</div>
-                            <div className="text-slate-500 text-[11px]">{job.copies} copy • {job.sides}</div>
-                          </td>
-                          <td className="p-4">
-                            <div className="font-black text-emerald-400">₹{job.totalPrice}</div>
-                            <div className="text-[10px] text-slate-500 uppercase">{job.paymentStatus || 'PAID'}</div>
-                          </td>
-                          <td className="p-4">
-                            {getStatusBadge(job.status)}
-                          </td>
-                          <td className="p-4">
-                            <span className="font-bold text-slate-300">{job.kioskName || 'Any Kiosk'}</span>
-                          </td>
-                          <td className="p-4 text-slate-400 text-xs font-mono">
-                            {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="p-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* Inspect */}
-                              <button
-                                onClick={() => setSelectedJob(job)}
-                                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-400 transition-all"
-                                title="Inspect Job Details"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-
-                              {/* Extend 6-digit Code (+24 Hours) */}
-                              {job.printCode && job.status === 'QUEUED' && (
-                                <button
-                                  onClick={() => handleExtendCode(job.printCode!)}
-                                  disabled={actionLoading === job.printCode}
-                                  className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-all active:scale-95"
-                                  title="Add +24 Hours to Code"
-                                >
-                                  <Clock className="w-4 h-4" />
-                                </button>
-                              )}
-
-                              {/* Stop / Cancel Active Job */}
-                              {job.status !== 'COMPLETED' && job.status !== 'CANCELLED' && (
-                                <button
-                                  onClick={() => handleCancelJob(job.id)}
-                                  disabled={actionLoading === job.id}
-                                  className="p-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all active:scale-95"
-                                  title="Stop & Cancel Job"
-                                >
-                                  {actionLoading === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
-                                </button>
-                              )}
-
-                              {/* Permanent Delete Option */}
-                              <button
-                                onClick={() => handleDeleteJob(job.id, job.displayId)}
-                                disabled={actionLoading === `delete-${job.id}`}
-                                className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-all active:scale-95"
-                                title="Delete Job Record Permanently"
-                              >
-                                {actionLoading === `delete-${job.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+            {/* Active 6-Digit Codes */}
+            <div className="bg-white border border-sky-100 p-6 rounded-3xl shadow-xl shadow-sky-950/5 relative overflow-hidden transition-all hover:border-sky-300">
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Active Release Codes</span>
+                <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100">
+                  <Clock className="w-5 h-5" />
+                </div>
               </div>
+              <div className="text-3xl font-black text-amber-600 mb-1">
+                {stats?.today.activeCodes || 0} <span className="text-sm font-bold text-slate-400">Ready</span>
+              </div>
+              <div className="text-xs font-medium text-slate-400">Active 24h validity for kiosk pickup</div>
+              <div className="absolute -bottom-8 -right-8 w-28 h-28 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
+            </div>
+
+            {/* Total Prints Delivered */}
+            <div className="bg-white border border-sky-100 p-6 rounded-3xl shadow-xl shadow-sky-950/5 relative overflow-hidden transition-all hover:border-sky-300">
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Prints Delivered</span>
+                <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100">
+                  <FileCheck className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-emerald-600 mb-1">
+                {stats?.today.successful || 0} <span className="text-sm font-bold text-slate-400">({stats?.today.pages || 0} pgs)</span>
+              </div>
+              <div className="text-xs font-medium text-slate-400">{stats?.today.printJobs || 0} total jobs submitted today</div>
+              <div className="absolute -bottom-8 -right-8 w-28 h-28 bg-emerald-400/10 rounded-full blur-2xl pointer-events-none" />
+            </div>
+
+            {/* Active Kiosks */}
+            <div className="bg-white border border-sky-100 p-6 rounded-3xl shadow-xl shadow-sky-950/5 relative overflow-hidden transition-all hover:border-sky-300">
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Kiosk Stations Fleet</span>
+                <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
+                  <Radio className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-blue-600 mb-1">
+                {kiosks.filter(k => k.status === 'ACTIVE').length} / {kiosks.length}
+              </div>
+              <div className="text-xs font-medium text-slate-400">Hardware Touchpoints Active</div>
+              <div className="absolute -bottom-8 -right-8 w-28 h-28 bg-blue-400/10 rounded-full blur-2xl pointer-events-none" />
             </div>
           </div>
-        )}
 
-        {/* ── TAB 3: KIOSK FLEET MANAGEMENT ── */}
-        {activeTab === 'kiosks' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-black text-white">Kiosk Stations & Hardware Fleet</h2>
-                <p className="text-slate-400 text-xs">Monitor paper levels, toner, hardware health, and maintenance modes</p>
-              </div>
-              <button
-                onClick={() => setShowAddKioskModal(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs md:text-sm shadow-lg shadow-blue-600/30 transition-all active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Kiosk Station</span>
-              </button>
-            </div>
+          {/* ── TAB 1 & 2: JOBS & CODES MANAGEMENT ── */}
+          {(activeTab === 'overview' || activeTab === 'jobs') && (
+            <div className="space-y-4">
+              {/* Action Toolbar */}
+              <div className="bg-white border border-sky-100 p-4 rounded-3xl shadow-sm flex flex-wrap items-center justify-between gap-4">
+                <div className="relative flex-1 min-w-[280px]">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search by Job ID (XP-000001), Document Name, or 6-Digit Code..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs md:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:bg-white transition-all"
+                  />
+                </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {kiosks.map(kiosk => (
-                <div
-                  key={kiosk.id}
-                  className={`bg-[#131b2e] border rounded-3xl p-6 space-y-5 transition-all shadow-xl ${
-                    kiosk.status === 'ACTIVE' ? 'border-slate-800' : 'border-amber-500/40 bg-[#161a28]'
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-black text-white">{kiosk.displayId}</h3>
-                        <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
-                          kiosk.status === 'ACTIVE'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                        }`}>
-                          {kiosk.status}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5">{kiosk.name} • {kiosk.location}</p>
-                    </div>
-
-                    <div className="p-3 rounded-2xl bg-slate-800 text-blue-400">
-                      <Printer className="w-6 h-6" />
-                    </div>
-                  </div>
-
-                  {/* Printer Telemetry */}
-                  <div className="grid grid-cols-2 gap-3 text-xs bg-[#0a0f1d] p-3.5 rounded-2xl border border-slate-800/80">
-                    <div>
-                      <span className="text-slate-500 font-bold block text-[10px] uppercase">Printer Engine</span>
-                      <span className="text-white font-black truncate block">{kiosk.printerName}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 font-bold block text-[10px] uppercase">Hardware Status</span>
-                      <span className="text-emerald-400 font-black flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> {kiosk.printerStatus}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Gauges (Paper & Toner) */}
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-slate-400">Paper Tray</span>
-                        <span className="text-blue-400">{kiosk.paperLevel}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${kiosk.paperLevel}%` }} />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-slate-400">Toner Cartridge</span>
-                        <span className="text-purple-400">{kiosk.tonerLevel}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-purple-500 rounded-full" style={{ width: `${kiosk.tonerLevel}%` }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Controls */}
-                  <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-400">Filter:</span>
+                  {['ALL', 'QUEUED', 'PRINTING', 'COMPLETED', 'CANCELLED'].map(st => (
                     <button
-                      onClick={() => handleToggleKioskStatus(kiosk.id, kiosk.status)}
-                      disabled={actionLoading === kiosk.id}
-                      className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 ${
-                        kiosk.status === 'ACTIVE'
-                          ? 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/30'
-                          : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/30'
+                      key={st}
+                      onClick={() => setStatusFilter(st)}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all ${
+                        statusFilter === st
+                          ? 'bg-sky-500 text-white shadow-md shadow-sky-500/20'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
-                      <Power className="w-3.5 h-3.5" />
-                      <span>{kiosk.status === 'ACTIVE' ? 'Set Maintenance' : 'Set Active'}</span>
+                      {st}
                     </button>
+                  ))}
 
-                    <button
-                      onClick={() => handleRebootKiosk(kiosk.id, kiosk.displayId)}
-                      disabled={actionLoading === kiosk.id}
-                      className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all active:scale-95"
-                      title="Remote Reboot"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={exportJobsCSV}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-sky-50 text-slate-700 border border-sky-200 rounded-xl text-xs font-bold transition-all ml-2 active:scale-95 shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Export CSV</span>
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB 4: DYNAMIC PRICING MATRIX ── */}
-        {activeTab === 'pricing' && (
-          <div className="max-w-3xl mx-auto space-y-6">
-            <div className="bg-[#131b2e] border border-slate-800 p-6 rounded-3xl space-y-6 shadow-xl">
-              <div>
-                <h2 className="text-xl font-black text-white">Dynamic Pricing Matrix</h2>
-                <p className="text-slate-400 text-xs mt-1">
-                  Adjust per-page printing rates in real time. Changes take effect instantly across all customer devices and kiosks.
-                </p>
               </div>
 
-              <div className="space-y-4">
-                {/* Black & White A4 */}
-                <div className="bg-[#0a0f1d] border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-white">
-                      B&W
-                    </div>
-                    <div>
-                      <h4 className="font-black text-white text-base">Black & White (A4)</h4>
-                      <p className="text-xs text-slate-400">Standard monochrome print</p>
-                    </div>
-                  </div>
+              {/* Data Table */}
+              <div className="bg-white border border-sky-100 rounded-3xl overflow-hidden shadow-xl shadow-sky-950/5">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs md:text-sm">
+                    <thead className="bg-sky-50/60 text-slate-600 font-bold border-b border-sky-100 text-[11px] uppercase tracking-wider">
+                      <tr>
+                        <th className="p-4">Job ID / File</th>
+                        <th className="p-4">6-Digit Code</th>
+                        <th className="p-4">Print Specs</th>
+                        <th className="p-4">Amount</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4">Kiosk Station</th>
+                        <th className="p-4">Time</th>
+                        <th className="p-4 text-right">Super Admin Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-sky-100/80">
+                      {loading ? (
+                        <tr>
+                          <td colSpan={8} className="p-12 text-center text-slate-400">
+                            <Loader2 className="w-8 h-8 animate-spin mx-auto text-sky-500 mb-2" />
+                            <span>Loading print queue...</span>
+                          </td>
+                        </tr>
+                      ) : jobs.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-12 text-center text-slate-400">
+                            No print jobs found.
+                          </td>
+                        </tr>
+                      ) : (
+                        jobs.map(job => (
+                          <tr key={job.id} className="hover:bg-sky-50/40 transition-colors">
+                            <td className="p-4">
+                              <div className="font-mono font-black text-slate-900 text-sm">{job.displayId}</div>
+                              <div className="text-slate-500 text-xs truncate max-w-[220px] font-medium" title={job.fileName}>
+                                {job.fileName}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              {job.printCode ? (
+                                <span className="font-mono font-black text-base text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200 shadow-sm">
+                                  {job.printCode}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic">None</span>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              <div className="font-bold text-slate-800">{job.totalPages} pgs • {job.colorMode}</div>
+                              <div className="text-slate-400 text-[11px]">{job.copies} copy • {job.sides}</div>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-black text-slate-900 text-base">₹{job.totalPrice}</div>
+                              <div className="text-[10px] text-emerald-600 font-bold uppercase">{job.paymentStatus || 'PAID'}</div>
+                            </td>
+                            <td className="p-4">
+                              {getStatusBadge(job.status)}
+                            </td>
+                            <td className="p-4">
+                              <span className="font-bold text-slate-700">{job.kioskName || 'Any Station'}</span>
+                            </td>
+                            <td className="p-4 text-slate-500 text-xs font-mono">
+                              {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* Inspect */}
+                                <button
+                                  onClick={() => setSelectedJob(job)}
+                                  className="p-2 rounded-xl bg-slate-100 hover:bg-sky-100 text-sky-700 transition-all shadow-sm"
+                                  title="Inspect Job Details"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
 
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg font-black text-slate-400">₹</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      defaultValue={pricingRules.find(r => r.colorMode === 'BW')?.pricePerPage || 2}
-                      onBlur={(e) => handleUpdatePrice('A4', 'BW', Number(e.target.value))}
-                      className="w-20 bg-[#131b2e] border border-blue-500 rounded-xl px-3 py-2 text-center text-lg font-black text-white focus:outline-none"
-                    />
-                    <span className="text-xs text-slate-500">/ page</span>
-                  </div>
-                </div>
+                                {/* Extend 6-digit Code (+24 Hours) */}
+                                {job.printCode && job.status === 'QUEUED' && (
+                                  <button
+                                    onClick={() => handleExtendCode(job.printCode!)}
+                                    disabled={actionLoading === job.printCode}
+                                    className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all active:scale-95 shadow-sm"
+                                    title="Extend Code (+24 Hours)"
+                                  >
+                                    <Clock className="w-4 h-4" />
+                                  </button>
+                                )}
 
-                {/* Color A4 */}
-                <div className="bg-[#0a0f1d] border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-pink-500 to-indigo-500 flex items-center justify-center font-black text-white">
-                      CLR
-                    </div>
-                    <div>
-                      <h4 className="font-black text-white text-base">Full Color (A4)</h4>
-                      <p className="text-xs text-slate-400">High-resolution vibrant color print</p>
-                    </div>
-                  </div>
+                                {/* Stop / Cancel Active Job */}
+                                {job.status !== 'COMPLETED' && job.status !== 'CANCELLED' && (
+                                  <button
+                                    onClick={() => handleCancelJob(job.id)}
+                                    disabled={actionLoading === job.id}
+                                    className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all active:scale-95 shadow-sm"
+                                    title="Stop & Cancel Job"
+                                  >
+                                    {actionLoading === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                                  </button>
+                                )}
 
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg font-black text-slate-400">₹</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="200"
-                      defaultValue={pricingRules.find(r => r.colorMode === 'COLOR')?.pricePerPage || 10}
-                      onBlur={(e) => handleUpdatePrice('A4', 'COLOR', Number(e.target.value))}
-                      className="w-20 bg-[#131b2e] border border-blue-500 rounded-xl px-3 py-2 text-center text-lg font-black text-white focus:outline-none"
-                    />
-                    <span className="text-xs text-slate-500">/ page</span>
-                  </div>
+                                {/* Permanent Delete Option */}
+                                <button
+                                  onClick={() => handleDeleteJob(job.id, job.displayId)}
+                                  disabled={actionLoading === `delete-${job.id}`}
+                                  className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-700 transition-all active:scale-95 shadow-sm"
+                                  title="Delete Record Permanently"
+                                >
+                                  {actionLoading === `delete-${job.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ── TAB 5: AUDIT LOGS ── */}
-        {activeTab === 'logs' && (
-          <div className="bg-[#131b2e] border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-            <h2 className="text-lg font-black text-white">System & Security Audit Trail</h2>
-            <div className="divide-y divide-slate-800/80">
-              {auditLogs.length === 0 ? (
-                <p className="text-slate-400 text-xs py-6 text-center">No recent audit events logged.</p>
-              ) : (
-                auditLogs.map((log: any) => (
-                  <div key={log.id} className="py-3 flex items-center justify-between text-xs">
+          {/* ── TAB 3: KIOSK FLEET MANAGEMENT ── */}
+          {activeTab === 'kiosks' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Kiosk Stations & Hardware Fleet</h2>
+                  <p className="text-slate-400 text-xs">Monitor paper trays, toner cartridges, and maintenance status</p>
+                </div>
+                <button
+                  onClick={() => setShowAddKioskModal(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-2xl font-bold text-xs md:text-sm shadow-lg shadow-sky-500/25 transition-all active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Register Kiosk Station</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {kiosks.map(kiosk => (
+                  <div
+                    key={kiosk.id}
+                    className={`bg-white border rounded-3xl p-6 space-y-5 transition-all shadow-xl shadow-sky-950/5 ${
+                      kiosk.status === 'ACTIVE' ? 'border-sky-100' : 'border-amber-300 bg-amber-50/20'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-black text-slate-900">{kiosk.displayId}</h3>
+                          <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                            kiosk.status === 'ACTIVE'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            {kiosk.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">{kiosk.name} • {kiosk.location}</p>
+                      </div>
+
+                      <div className="p-3 rounded-2xl bg-sky-50 text-sky-600 border border-sky-100">
+                        <Printer className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    {/* Printer Telemetry */}
+                    <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <div>
+                        <span className="text-slate-400 font-bold block text-[10px] uppercase">Printer Engine</span>
+                        <span className="text-slate-800 font-black truncate block">{kiosk.printerName}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-bold block text-[10px] uppercase">Engine Status</span>
+                        <span className="text-emerald-700 font-black flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> {kiosk.printerStatus}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Gauges (Paper & Toner) */}
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex justify-between text-xs font-bold mb-1">
+                          <span className="text-slate-500">Paper Tray</span>
+                          <span className="text-sky-600">{kiosk.paperLevel}%</span>
+                        </div>
+                        <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-sky-500 rounded-full" style={{ width: `${kiosk.paperLevel}%` }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-xs font-bold mb-1">
+                          <span className="text-slate-500">Toner Cartridge</span>
+                          <span className="text-indigo-600">{kiosk.tonerLevel}%</span>
+                        </div>
+                        <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${kiosk.tonerLevel}%` }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleKioskStatus(kiosk.id, kiosk.status)}
+                        disabled={actionLoading === kiosk.id}
+                        className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-sm ${
+                          kiosk.status === 'ACTIVE'
+                            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                        }`}
+                      >
+                        <Power className="w-3.5 h-3.5" />
+                        <span>{kiosk.status === 'ACTIVE' ? 'Set Maintenance' : 'Set Active'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleRebootKiosk(kiosk.id, kiosk.displayId)}
+                        disabled={actionLoading === kiosk.id}
+                        className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all active:scale-95 shadow-sm"
+                        title="Remote Reboot"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 4: DYNAMIC PRICING MATRIX ── */}
+          {activeTab === 'pricing' && (
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div className="bg-white border border-sky-100 p-8 rounded-3xl space-y-6 shadow-xl shadow-sky-950/5">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Dynamic Pricing Matrix</h2>
+                  <p className="text-slate-400 text-xs mt-1">
+                    Set per-page printing fees. New prices apply immediately across all kiosks and customer mobile phones.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Black & White A4 */}
+                  <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-800 text-white flex items-center justify-center font-black text-sm shadow-md">
+                        B&W
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-900 text-base">Black & White (A4)</h4>
+                        <p className="text-xs text-slate-400">Standard monochrome print</p>
+                      </div>
+                    </div>
+
                     <div className="flex items-center gap-3">
-                      <span className="font-mono font-black text-blue-400 uppercase bg-blue-500/10 px-2.5 py-1 rounded-md border border-blue-500/20">
-                        {log.action}
-                      </span>
-                      <span className="text-slate-300">{log.entityType} ({log.entityId || 'Global'})</span>
+                      <span className="text-lg font-black text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        defaultValue={pricingRules.find(r => r.colorMode === 'BW')?.pricePerPage || 2}
+                        onBlur={(e) => handleUpdatePrice('A4', 'BW', Number(e.target.value))}
+                        className="w-20 bg-white border border-sky-500 rounded-xl px-3 py-2 text-center text-lg font-black text-slate-900 focus:outline-none shadow-sm"
+                      />
+                      <span className="text-xs text-slate-400 font-bold">/ page</span>
                     </div>
-                    <span className="text-slate-500 font-mono">
-                      {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </span>
                   </div>
-                ))
-              )}
+
+                  {/* Color A4 */}
+                  <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-pink-500 to-sky-500 text-white flex items-center justify-center font-black text-sm shadow-md">
+                        CLR
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-900 text-base">Full Color (A4)</h4>
+                        <p className="text-xs text-slate-400">High-resolution vibrant color print</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-black text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="200"
+                        defaultValue={pricingRules.find(r => r.colorMode === 'COLOR')?.pricePerPage || 10}
+                        onBlur={(e) => handleUpdatePrice('A4', 'COLOR', Number(e.target.value))}
+                        className="w-20 bg-white border border-sky-500 rounded-xl px-3 py-2 text-center text-lg font-black text-slate-900 focus:outline-none shadow-sm"
+                      />
+                      <span className="text-xs text-slate-400 font-bold">/ page</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-      </main>
+          )}
+
+          {/* ── TAB 5: AUDIT LOGS ── */}
+          {activeTab === 'logs' && (
+            <div className="bg-white border border-sky-100 rounded-3xl p-8 shadow-xl shadow-sky-950/5 space-y-4">
+              <h2 className="text-lg font-black text-slate-900">System & Security Audit Trail</h2>
+              <div className="divide-y divide-slate-100">
+                {auditLogs.length === 0 ? (
+                  <p className="text-slate-400 text-xs py-8 text-center">No recent audit events logged.</p>
+                ) : (
+                  auditLogs.map((log: any) => (
+                    <div key={log.id} className="py-3.5 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-black text-sky-700 uppercase bg-sky-50 px-3 py-1 rounded-md border border-sky-200">
+                          {log.action}
+                        </span>
+                        <span className="text-slate-700 font-semibold">{log.entityType} ({log.entityId || 'Global'})</span>
+                      </div>
+                      <span className="text-slate-400 font-mono">
+                        {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* ── MODAL: INSPECT JOB DETAILS ── */}
       <AnimatePresence>
         {selectedJob && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#131b2e] border border-slate-700 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl"
+              className="bg-white border border-sky-100 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl"
             >
-              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div className="flex justify-between items-center pb-3 border-b border-slate-100">
                 <div>
-                  <h3 className="text-lg font-black text-white">{selectedJob.displayId}</h3>
+                  <h3 className="text-lg font-black text-slate-900">{selectedJob.displayId}</h3>
                   <p className="text-xs text-slate-400">Detailed Print Job Telemetry</p>
                 </div>
                 <button
                   onClick={() => setSelectedJob(null)}
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400"
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               <div className="space-y-3 text-xs">
-                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-bold">Document Name</span>
-                  <span className="text-white font-black">{selectedJob.fileName}</span>
+                  <span className="text-slate-900 font-black">{selectedJob.fileName}</span>
                 </div>
-                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-bold">6-Digit Release Code</span>
-                  <span className="text-amber-400 font-mono font-black text-sm">{selectedJob.printCode || 'None'}</span>
+                  <span className="text-amber-700 font-mono font-black text-sm">{selectedJob.printCode || 'None'}</span>
                 </div>
-                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-bold">Total Pages / Copies</span>
-                  <span className="text-white font-bold">{selectedJob.totalPages} pages ({selectedJob.copies} copy)</span>
+                  <span className="text-slate-900 font-bold">{selectedJob.totalPages} pages ({selectedJob.copies} copy)</span>
                 </div>
-                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-bold">Amount Paid</span>
-                  <span className="text-emerald-400 font-black">₹{selectedJob.totalPrice}</span>
+                  <span className="text-slate-900 font-black">₹{selectedJob.totalPrice}</span>
                 </div>
-                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-bold">Assigned Kiosk</span>
-                  <span className="text-white font-bold">{selectedJob.kioskName || 'Any Kiosk Station'}</span>
+                  <span className="text-slate-900 font-bold">{selectedJob.kioskName || 'Any Kiosk Station'}</span>
                 </div>
               </div>
 
@@ -1008,34 +1014,34 @@ export default function SuperAdminRootPage() {
                 {selectedJob.printCode && selectedJob.status === 'QUEUED' && (
                   <button
                     onClick={() => handleExtendCode(selectedJob.printCode!)}
-                    className="py-2.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                    className="py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
                   >
                     <Clock className="w-3.5 h-3.5" />
-                    <span>Extend Code (+24 Hours)</span>
+                    <span>Extend Code (+24h)</span>
                   </button>
                 )}
 
                 {selectedJob.status !== 'COMPLETED' && selectedJob.status !== 'CANCELLED' && (
                   <button
                     onClick={() => handleCancelJob(selectedJob.id)}
-                    className="py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                    className="py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-md shadow-rose-500/20"
                   >
                     <Ban className="w-3.5 h-3.5" />
-                    <span>Stop Job & Invalidate Code</span>
+                    <span>Stop Job & Cancel Code</span>
                   </button>
                 )}
 
                 <button
                   onClick={() => handleDeleteJob(selectedJob.id, selectedJob.displayId)}
-                  className="py-2.5 bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 border border-slate-700 rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                  className="py-2.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete Record Permanently</span>
+                  <span>Delete Record</span>
                 </button>
 
                 <button
                   onClick={() => setSelectedJob(null)}
-                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                  className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs"
                 >
                   Close
                 </button>
@@ -1048,21 +1054,21 @@ export default function SuperAdminRootPage() {
       {/* ── MODAL: ADD KIOSK STATION ── */}
       <AnimatePresence>
         {showAddKioskModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#131b2e] border border-slate-700 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl"
+              className="bg-white border border-sky-100 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl"
             >
-              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div className="flex justify-between items-center pb-3 border-b border-slate-100">
                 <div>
-                  <h3 className="text-lg font-black text-white">Add Kiosk Station</h3>
-                  <p className="text-xs text-slate-400">Register new physical touchpoint in cloud</p>
+                  <h3 className="text-lg font-black text-slate-900">Register Kiosk Station</h3>
+                  <p className="text-xs text-slate-400">Add physical touchpoint to cloud fleet</p>
                 </div>
                 <button
                   onClick={() => setShowAddKioskModal(false)}
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400"
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1070,36 +1076,36 @@ export default function SuperAdminRootPage() {
 
               <form onSubmit={handleAddKiosk} className="space-y-4 text-xs">
                 <div>
-                  <label className="block text-slate-400 font-bold mb-1">Kiosk ID (e.g. XPOS-002)</label>
+                  <label className="block text-slate-600 font-bold mb-1">Kiosk ID (e.g. XPOS-002)</label>
                   <input
                     type="text"
                     required
                     placeholder="XPOS-002"
                     value={newKioskDisplayId}
                     onChange={(e) => setNewKioskDisplayId(e.target.value)}
-                    className="w-full bg-[#0a0f1d] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white font-mono font-bold focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono font-bold focus:outline-none focus:border-sky-500 focus:bg-white"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 font-bold mb-1">Station Name</label>
+                  <label className="block text-slate-600 font-bold mb-1">Station Name</label>
                   <input
                     type="text"
                     placeholder="Library Lobby Kiosk"
                     value={newKioskName}
                     onChange={(e) => setNewKioskName(e.target.value)}
-                    className="w-full bg-[#0a0f1d] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 focus:outline-none focus:border-sky-500 focus:bg-white"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 font-bold mb-1">Physical Location</label>
+                  <label className="block text-slate-600 font-bold mb-1">Physical Location</label>
                   <input
                     type="text"
                     placeholder="Building B, Floor 1"
                     value={newKioskLocation}
                     onChange={(e) => setNewKioskLocation(e.target.value)}
-                    className="w-full bg-[#0a0f1d] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 focus:outline-none focus:border-sky-500 focus:bg-white"
                   />
                 </div>
 
@@ -1107,7 +1113,7 @@ export default function SuperAdminRootPage() {
                   <button
                     type="submit"
                     disabled={actionLoading === 'add-kiosk'}
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 active:scale-95"
+                    className="w-full py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 active:scale-95 shadow-md shadow-sky-500/20"
                   >
                     {actionLoading === 'add-kiosk' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     <span>Save & Register Kiosk</span>
@@ -1115,7 +1121,7 @@ export default function SuperAdminRootPage() {
                   <button
                     type="button"
                     onClick={() => setShowAddKioskModal(false)}
-                    className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                    className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs"
                   >
                     Cancel
                   </button>
@@ -1129,24 +1135,24 @@ export default function SuperAdminRootPage() {
       {/* ── MODAL: EMERGENCY STOP & FLUSH QUEUE ── */}
       <AnimatePresence>
         {showEmergencyModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#1e131d] border border-rose-500/50 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl"
+              className="bg-white border border-rose-200 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl"
             >
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
                   <ShieldAlert className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-rose-300">EMERGENCY FLUSH</h3>
-                  <p className="text-xs text-slate-400">Cancel all active printing jobs immediately</p>
+                  <h3 className="text-lg font-black text-rose-700">EMERGENCY FLUSH</h3>
+                  <p className="text-xs text-slate-400">Halt all active printing jobs immediately</p>
                 </div>
               </div>
 
-              <p className="text-slate-300 text-xs leading-relaxed">
+              <p className="text-slate-600 text-xs leading-relaxed">
                 This will immediately cancel all queued and in-progress print jobs across all kiosks and invalidate all active release codes. Use in case of paper jams, hardware emergencies, or maintenance shutdowns.
               </p>
 
@@ -1154,14 +1160,14 @@ export default function SuperAdminRootPage() {
                 <button
                   onClick={handleEmergencyFlush}
                   disabled={actionLoading === 'emergency-flush'}
-                  className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30"
+                  className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-rose-600/25"
                 >
                   {actionLoading === 'emergency-flush' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   <span>CONFIRM FLUSH ALL JOBS</span>
                 </button>
                 <button
                   onClick={() => setShowEmergencyModal(false)}
-                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs"
                 >
                   Cancel
                 </button>
