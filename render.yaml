@@ -1,4 +1,4 @@
-# Render.com Blueprint for Complete XPOS Cloud (API + Customer App)
+# Render.com Blueprint for Complete XPOS Cloud Ecosystem
 services:
   # 1. Core API Backend & WebSocket Server
   - type: web
@@ -33,5 +33,19 @@ services:
         value: production
       - key: NEXT_PUBLIC_API_URL
         value: https://xpos-printing-cloud.onrender.com
-      - key: NEXT_PUBLIC_APP_URL
-        sync: false
+
+  # 3. Kiosk Screen Web App (Next.js)
+  - type: web
+    name: xpos-kiosk
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build --workspace=@xpos/kiosk
+    startCommand: npm run start --workspace=@xpos/kiosk -- -p $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://xpos-printing-cloud.onrender.com
+      - key: NEXT_PUBLIC_KIOSK_ID
+        value: XPOS-001
