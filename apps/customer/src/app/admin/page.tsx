@@ -22,7 +22,19 @@ import {
   Plus,
   X,
   MapPin,
-  Loader2
+  Loader2,
+  Trash2,
+  Ban,
+  RotateCcw,
+  Sparkles,
+  ShieldAlert,
+  Sliders,
+  Download,
+  Eye,
+  Layers,
+  FileCheck,
+  Zap,
+  Power
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { getApiUrl } from '../../lib/api';
@@ -30,10 +42,13 @@ import { getApiUrl } from '../../lib/api';
 interface DashboardStats {
   today: {
     revenue: number;
+    allTimeRevenue: number;
     printJobs: number;
     pages: number;
     successful: number;
     failed: number;
+    cancelled: number;
+    activeCodes: number;
   };
   kiosks: {
     total: number;
@@ -41,33 +56,28 @@ interface DashboardStats {
   };
 }
 
-interface Job {
+interface PrintJob {
   id: string;
   displayId: string;
   status: string;
   printMethod: string;
   colorMode: string;
-  sides?: string;
-  printCode?: string;
-  printCodeStatus?: string;
   copies: number;
   totalPages: number;
   totalPrice: number;
+  sides: string;
+  printCode: string | null;
+  printCodeStatus: string | null;
+  printCodeExpiresAt: string | null;
   fileName: string;
-  kioskName: string;
-  kioskLocation: string;
-  paymentStatus: string;
-  paymentAmount: number;
+  fileSize?: number;
+  kioskName?: string;
+  kioskLocation?: string;
+  paymentStatus?: string;
+  paymentAmount?: number;
+  paymentOrderId?: string;
   createdAt: string;
-  completedAt: string | null;
-}
-
-interface PricingRule {
-  id: string;
-  paperSize: string;
-  colorMode: string;
-  pricePerPage: number;
-  isActive: boolean;
+  completedAt?: string;
 }
 
 interface KioskInfo {
@@ -78,720 +88,1038 @@ interface KioskInfo {
   status: string;
   printerStatus: string;
   printerName: string;
+  totalJobsServed: number;
+  lastHeartbeat: string;
   isOnline: boolean;
-  lastHeartbeat: string | null;
+  paperLevel: number;
+  tonerLevel: number;
   cpu: number;
   ram: number;
   disk: number;
+  appVersion: string;
 }
 
-type Tab = 'dashboard' | 'jobs' | 'kiosks' | 'pricing';
+interface PricingRule {
+  id?: string;
+  paperSize: string;
+  colorMode: string;
+  pricePerPage: number;
+  isActive: boolean;
+}
 
-export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>('dashboard');
+export default function AdminDashboardPage() {
+  const [activeTab, setActiveTab] = useState<'overview' | 'jobs' | 'kiosks' | 'pricing' | 'logs'>('overview');
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [jobsTotal, setJobsTotal] = useState(0);
-  const [jobsPage, setJobsPage] = useState(1);
+  const [jobs, setJobs] = useState<PrintJob[]>([]);
   const [kiosks, setKiosks] = useState<KioskInfo[]>([]);
-  const [pricing, setPricing] = useState<PricingRule[]>([]);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [editingPrice, setEditingPrice] = useState<{ paperSize: string; colorMode: string; price: string } | null>(null);
-  const [liveConnected, setLiveConnected] = useState(false);
-  const [lastLiveEvent, setLastLiveEvent] = useState<string | null>(null);
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // Add Kiosk Modal State
-  const [showAddKiosk, setShowAddKiosk] = useState(false);
-  const [newKioskId, setNewKioskId] = useState('');
+  // Filters & Search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Modals
+  const [selectedJob, setSelectedJob] = useState<PrintJob | null>(null);
+  const [showAddKioskModal, setShowAddKioskModal] = useState(false);
+  const [newKioskDisplayId, setNewKioskDisplayId] = useState('');
   const [newKioskName, setNewKioskName] = useState('');
   const [newKioskLocation, setNewKioskLocation] = useState('');
-  const [newKioskPrinter, setNewKioskPrinter] = useState('MF280 Series');
-  const [addingKiosk, setAddingKiosk] = useState(false);
-  const [kioskAddError, setKioskAddError] = useState<string | null>(null);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
 
-  // Fetch dashboard stats
-  const fetchDashboard = useCallback(async () => {
-    try {
-      const res = await fetch(`${getApiUrl()}/api/admin/dashboard`);
-      const data = await res.json();
-      if (data.success) setStats(data.data);
-    } catch (e) { console.error(e); }
-  }, []);
+  // ── Show Temporary Notification ──
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setActionMessage({ type, text });
+    setTimeout(() => setActionMessage(null), 4000);
+  };
 
-  // Fetch jobs
-  const fetchJobs = useCallback(async () => {
+  // ── Fetch All Admin Data ──
+  const fetchData = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ page: jobsPage.toString(), limit: '20' });
-      if (statusFilter) params.set('status', statusFilter);
-      const res = await fetch(`${getApiUrl()}/api/admin/jobs?${params}`);
-      const data = await res.json();
-      if (data.success) {
-        setJobs(data.data.jobs);
-        setJobsTotal(data.data.pagination.total);
-      }
-    } catch (e) { console.error(e); }
-  }, [jobsPage, statusFilter]);
+      const baseUrl = getApiUrl();
+      const [statsRes, jobsRes, kiosksRes, pricingRes, logsRes] = await Promise.all([
+        fetch(`${baseUrl}/api/admin/dashboard`).then(r => r.json()).catch(() => ({})),
+        fetch(`${baseUrl}/api/admin/jobs?status=${statusFilter}&search=${encodeURIComponent(searchQuery)}`).then(r => r.json()).catch(() => ({})),
+        fetch(`${baseUrl}/api/admin/kiosks`).then(r => r.json()).catch(() => ({})),
+        fetch(`${baseUrl}/api/pricing`).then(r => r.json()).catch(() => ({})),
+        fetch(`${baseUrl}/api/admin/audit-logs`).then(r => r.json()).catch(() => ({})),
+      ]);
 
-  // Fetch kiosks
-  const fetchKiosks = useCallback(async () => {
-    try {
-      const res = await fetch(`${getApiUrl()}/api/admin/kiosks`);
-      const data = await res.json();
-      if (data.success) setKiosks(data.data);
-    } catch (e) { console.error(e); }
-  }, []);
+      if (statsRes.success) setStats(statsRes.data);
+      if (jobsRes.success) setJobs(jobsRes.data?.jobs || []);
+      if (kiosksRes.success) setKiosks(kiosksRes.data || []);
+      if (pricingRes.success) setPricingRules(pricingRes.data || []);
+      if (logsRes.success) setAuditLogs(logsRes.data || []);
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, searchQuery]);
 
-  // Fetch pricing
-  const fetchPricing = useCallback(async () => {
-    try {
-      const res = await fetch(`${getApiUrl()}/api/pricing`);
-      const data = await res.json();
-      if (data.success) setPricing(data.data);
-    } catch (e) { console.error(e); }
-  }, []);
+  // Initial fetch and polling
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 4000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
-  // ── Real-Time WebSocket Connection ──
+  // ── WebSocket Real-Time Listener ──
   useEffect(() => {
     const socket = io(getApiUrl(), { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('⚡ Admin WebSocket Connected');
-      setLiveConnected(true);
+      setIsLiveConnected(true);
       socket.emit('join_admin');
     });
 
-    socket.on('disconnect', () => {
-      console.log('❌ Admin WebSocket Disconnected');
-      setLiveConnected(false);
-    });
-
-    // Real-time Stats Stream
-    socket.on('admin_stats', (liveStats: DashboardStats) => {
-      setStats(liveStats);
-      setLastLiveEvent(`Stats updated: ₹${liveStats.today.revenue} revenue, ${liveStats.today.printJobs} jobs`);
-    });
-
-    // Real-time Job Events
-    socket.on('job_updated', (updatedJob: any) => {
-      setLastLiveEvent(`Job ${updatedJob.displayId} is now ${updatedJob.status}`);
-      // Refresh jobs list instantly
-      fetchJobs();
-      fetchDashboard();
-    });
-
-    // Real-time Kiosk Heartbeat
-    socket.on('kiosk_heartbeat', (kioskEvent: any) => {
-      setKiosks(prev => prev.map(k => {
-        if (k.id === kioskEvent.kioskId || k.displayId === kioskEvent.displayId) {
-          return {
-            ...k,
-            isOnline: kioskEvent.isOnline !== undefined ? kioskEvent.isOnline : true,
-            cpu: kioskEvent.cpu ?? k.cpu,
-            ram: kioskEvent.ram ?? k.ram,
-            disk: kioskEvent.disk ?? k.disk,
-            printerStatus: kioskEvent.printerStatus ?? k.printerStatus,
-            lastHeartbeat: kioskEvent.lastHeartbeat ?? new Date().toISOString(),
-          };
-        }
-        return k;
-      }));
-    });
+    socket.on('disconnect', () => setIsLiveConnected(false));
+    socket.on('job_updated', () => fetchData());
+    socket.on('job_update', () => fetchData());
 
     return () => {
       socket.disconnect();
     };
-  }, [fetchJobs, fetchDashboard]);
+  }, [fetchData]);
 
-  // Initial Load + 5s background poll
-  useEffect(() => {
-    fetchDashboard();
-    fetchKiosks();
-    fetchPricing();
-    const interval = setInterval(() => {
-      fetchDashboard();
-      fetchKiosks();
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [fetchDashboard, fetchKiosks, fetchPricing]);
-
-  useEffect(() => {
-    fetchJobs();
-  }, [fetchJobs]);
-
-  // Update pricing
-  const updatePricing = async (paperSize: string, colorMode: string, pricePerPage: number) => {
+  // ── Action Handlers ──
+  const handleCancelJob = async (jobId: string) => {
+    if (!confirm('Are you sure you want to cancel this print job and revoke its code?')) return;
+    setActionLoading(jobId);
     try {
-      await fetch(`${getApiUrl()}/api/admin/pricing`, {
-        method: 'PUT',
+      const res = await fetch(`${getApiUrl()}/api/admin/jobs/${jobId}/cancel`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paperSize, colorMode, pricePerPage }),
       });
-      fetchPricing();
-      setEditingPrice(null);
-    } catch (e) { console.error(e); }
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'Job cancelled successfully');
+        fetchData();
+        setSelectedJob(null);
+      } else {
+        showToast(data.error || 'Failed to cancel job', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  // Create new kiosk
+  const handleRevokeCode = async (code: string) => {
+    if (!confirm(`Revoke 6-digit release code ${code}?`)) return;
+    setActionLoading(code);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/admin/codes/${code}/revoke`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Code ${code} revoked`);
+        fetchData();
+      } else {
+        showToast(data.error || 'Failed to revoke code', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleExtendCode = async (code: string) => {
+    setActionLoading(code);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/admin/codes/${code}/extend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hours: 24 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Code extended by +24 Hours`);
+        fetchData();
+      } else {
+        showToast(data.error || 'Failed to extend code', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleToggleKioskStatus = async (kioskId: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE';
+    setActionLoading(kioskId);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/admin/kiosks/${kioskId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Kiosk status set to ${nextStatus}`);
+        fetchData();
+      } else {
+        showToast(data.error || 'Failed to update kiosk status', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRebootKiosk = async (kioskId: string, displayId: string) => {
+    if (!confirm(`Send remote reboot command to Station ${displayId}?`)) return;
+    setActionLoading(kioskId);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/admin/kiosks/${kioskId}/reboot`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Reboot signal sent to Station ${displayId}`);
+      } else {
+        showToast(data.error || 'Failed to reboot kiosk', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleAddKiosk = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newKioskId || !newKioskName || !newKioskLocation) return;
-    setAddingKiosk(true);
-    setKioskAddError(null);
+    if (!newKioskDisplayId.trim()) return;
+    setActionLoading('add-kiosk');
     try {
-      const res = await fetch(`${getApiUrl()}/api/kiosks`, {
+      const res = await fetch(`${getApiUrl()}/api/admin/kiosks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          displayId: newKioskId.trim().toUpperCase(),
-          name: newKioskName.trim(),
-          location: newKioskLocation.trim(),
-          printerName: newKioskPrinter.trim(),
+          displayId: newKioskDisplayId.trim().toUpperCase(),
+          name: newKioskName.trim() || `XPOS Station ${newKioskDisplayId.trim().toUpperCase()}`,
+          location: newKioskLocation.trim() || 'Main Hall',
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setShowAddKiosk(false);
-        setNewKioskId('');
+        showToast(`Kiosk ${newKioskDisplayId.toUpperCase()} added successfully!`);
+        setShowAddKioskModal(false);
+        setNewKioskDisplayId('');
         setNewKioskName('');
         setNewKioskLocation('');
-        fetchKiosks();
-        fetchDashboard();
+        fetchData();
       } else {
-        setKioskAddError(data.error || 'Failed to add kiosk');
+        showToast(data.error || 'Failed to add kiosk', 'error');
       }
-    } catch (err: any) {
-      setKioskAddError(err?.message || 'Network error');
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
     } finally {
-      setAddingKiosk(false);
+      setActionLoading(null);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'COMPLETED': return 'bg-accent-green/20 text-accent-green border-accent-green/30';
-      case 'PRINTING': return 'bg-xpos-500/20 text-xpos-300 border-xpos-500/40 animate-pulse';
-      case 'SENDING': case 'QUEUED': return 'bg-accent-amber/20 text-accent-amber border-accent-amber/30';
-      case 'PAID': case 'PAYMENT_PENDING': return 'bg-accent-cyan/20 text-accent-cyan border-accent-cyan/30';
-      case 'FAILED': case 'PRINT_FAILED': case 'PAYMENT_FAILED': return 'bg-accent-rose/20 text-accent-rose border-accent-rose/30';
-      case 'CANCELLED': return 'bg-dark-500/20 text-dark-400 border-dark-500/30';
-      default: return 'bg-dark-500/20 text-dark-300 border-dark-500/30';
-    }
-  };
-
-  const formatTime = (iso: string) => {
+  const handleUpdatePrice = async (paperSize: string, colorMode: string, newPrice: number) => {
     try {
-      const d = new Date(iso);
-      return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    } catch {
-      return iso;
+      const res = await fetch(`${getApiUrl()}/api/admin/pricing`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paperSize, colorMode, pricePerPage: newPrice }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Price updated to ₹${newPrice}/page`);
+        fetchData();
+      } else {
+        showToast(data.error || 'Failed to update pricing', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    }
+  };
+
+  const handleEmergencyFlush = async () => {
+    setActionLoading('emergency-flush');
+    try {
+      const res = await fetch(`${getApiUrl()}/api/admin/queue/flush`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'All print queues flushed!', 'success');
+        setShowEmergencyModal(false);
+        fetchData();
+      } else {
+        showToast(data.error || 'Failed to flush queue', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const exportJobsCSV = () => {
+    if (jobs.length === 0) return;
+    const headers = ['Display ID', 'Status', 'File Name', 'Pages', 'Price (INR)', 'Code', 'Kiosk', 'Date'];
+    const rows = jobs.map(j => [
+      j.displayId,
+      j.status,
+      `"${j.fileName.replace(/"/g, '""')}"`,
+      j.totalPages,
+      j.totalPrice,
+      j.printCode || 'N/A',
+      j.kioskName || 'N/A',
+      j.createdAt,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `XPOS_Jobs_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'COMPLETED':
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><CheckCircle2 className="w-3.5 h-3.5" /> COMPLETED</span>;
+      case 'PRINTING':
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse"><Printer className="w-3.5 h-3.5" /> PRINTING</span>;
+      case 'QUEUED':
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-500/10 text-amber-400 border border-amber-500/20"><Clock className="w-3.5 h-3.5" /> CODE ACTIVE</span>;
+      case 'CANCELLED':
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-500/10 text-slate-400 border border-slate-500/20"><Ban className="w-3.5 h-3.5" /> CANCELLED</span>;
+      case 'FAILED':
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-500/10 text-rose-400 border border-rose-500/20"><XCircle className="w-3.5 h-3.5" /> FAILED</span>;
+      default:
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-800 text-slate-300">{status}</span>;
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#070913] text-white">
-      {/* ── Top Bar ── */}
-      <header className="border-b border-white/10 bg-[#0c1024]/80 backdrop-blur-2xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[#0a0f1d] text-slate-100 font-sans selection:bg-blue-500 selection:text-white pb-20">
+      {/* ── Top Super Admin Navigation Bar ── */}
+      <header className="sticky top-0 z-40 bg-[#0d1527]/90 backdrop-blur-xl border-b border-slate-800/80 px-4 md:px-8 py-3.5">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-xpos-500 to-xpos-700 flex items-center justify-center glow">
-              <Printer className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Zap className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold font-display tracking-wide">XPOS Live Admin</h1>
-                {/* Live WebSocket Indicator */}
-                <div className="flex items-center gap-1.5 bg-accent-green/15 border border-accent-green/30 text-accent-green px-2.5 py-0.5 rounded-full text-xs font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-accent-green animate-ping" />
-                  <span>REAL-TIME LIVE</span>
-                </div>
+                <h1 className="text-lg md:text-xl font-black text-white tracking-tight">XPOS SUPER ADMIN</h1>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-md border border-blue-500/30">
+                  Control Center
+                </span>
               </div>
-              <p className="text-xs text-dark-400">Autonomous Self-Service Printing Control Center</p>
+              <p className="text-xs text-slate-400">Enterprise Cloud Fleet & Print Management</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {lastLiveEvent && (
-              <span className="text-xs text-xpos-300 bg-xpos-500/10 border border-xpos-500/20 px-3 py-1 rounded-lg truncate max-w-xs animate-fade-in">
-                ⚡ {lastLiveEvent}
-              </span>
-            )}
+            {/* Live WebSocket Status Pulse */}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
+              isLiveConnected
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+              <span>{isLiveConnected ? 'Cloud WebSockets: LIVE' : 'Reconnecting...'}</span>
+            </div>
+
+            {/* Emergency Stop Button */}
             <button
-              onClick={() => { fetchDashboard(); fetchJobs(); fetchKiosks(); fetchPricing(); }}
-              className="flex items-center gap-2 px-3.5 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-medium text-dark-300 hover:text-white transition-all active:scale-95"
+              onClick={() => setShowEmergencyModal(true)}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-xs font-black transition-all active:scale-95 shadow-sm"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Sync
+              <ShieldAlert className="w-4 h-4" />
+              <span>EMERGENCY STOP</span>
+            </button>
+
+            {/* Refresh Button */}
+            <button
+              onClick={fetchData}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all active:scale-95"
+              title="Refresh Data"
+            >
+              <RefreshCw className="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
 
-      {/* ── Navigation Tabs ── */}
-      <div className="max-w-7xl mx-auto px-6 pt-6">
-        <div className="flex gap-1.5 bg-white/5 border border-white/10 rounded-2xl p-1.5 w-fit mb-8 shadow-inner">
-          {([
-            { id: 'dashboard', label: 'Overview', icon: BarChart3 },
-            { id: 'jobs', label: 'Live Print Queue', icon: FileText },
-            { id: 'kiosks', label: 'Kiosks & Hardware', icon: Printer },
-            { id: 'pricing', label: 'Dynamic Pricing', icon: DollarSign },
-          ] as const).map(({ id, label, icon: Icon }) => (
+      {/* ── Toast Notification ── */}
+      <AnimatePresence>
+        {actionMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`fixed top-18 right-6 z-50 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border text-sm font-bold ${
+              actionMessage.type === 'success'
+                ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200'
+                : 'bg-rose-950/90 border-rose-500/40 text-rose-200'
+            }`}
+          >
+            {actionMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
+            <span>{actionMessage.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-6 space-y-6">
+        {/* ── High-Level Metric Cards ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Revenue */}
+          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
+            <div className="flex justify-between items-start mb-3">
+              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Today's Revenue</span>
+              <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <DollarSign className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-white mb-1">
+              ₹{stats?.today.revenue || 0}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span className="text-emerald-400 font-bold">All-time: ₹{stats?.today.allTimeRevenue || 0}</span>
+            </div>
+            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
+          </div>
+
+          {/* Active 6-Digit Codes */}
+          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
+            <div className="flex justify-between items-start mb-3">
+              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Active Release Codes</span>
+              <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <Clock className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-amber-400 mb-1">
+              {stats?.today.activeCodes || 0} <span className="text-sm font-bold text-slate-400">Ready</span>
+            </div>
+            <div className="text-xs text-slate-400">Valid 24h for customer release</div>
+            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
+          </div>
+
+          {/* Completed Prints */}
+          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
+            <div className="flex justify-between items-start mb-3">
+              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Prints Delivered</span>
+              <div className="p-2.5 rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                <FileCheck className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-blue-400 mb-1">
+              {stats?.today.successful || 0} <span className="text-sm font-bold text-slate-400">({stats?.today.pages || 0} pgs)</span>
+            </div>
+            <div className="text-xs text-slate-400">{stats?.today.printJobs || 0} total requests created today</div>
+            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-blue-500/5 rounded-full blur-xl pointer-events-none" />
+          </div>
+
+          {/* Kiosk Fleet */}
+          <div className="bg-[#131b2e] border border-slate-800 p-5 rounded-3xl relative overflow-hidden shadow-lg">
+            <div className="flex justify-between items-start mb-3">
+              <span className="text-xs font-black uppercase text-slate-400 tracking-wider">Kiosk Stations</span>
+              <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <Radio className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-3xl font-black text-indigo-400 mb-1">
+              {kiosks.filter(k => k.status === 'ACTIVE').length} / {kiosks.length}
+            </div>
+            <div className="text-xs text-slate-400">Stations Active in Cloud Fleet</div>
+            <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
+          </div>
+        </div>
+
+        {/* ── Navigation Tabs ── */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
+          {[
+            { id: 'overview', label: '📊 Control Overview' },
+            { id: 'jobs', label: '🖨️ Jobs & 6-Digit Codes' },
+            { id: 'kiosks', label: '🖥️ Kiosk Stations Fleet' },
+            { id: 'pricing', label: '💰 Dynamic Pricing Matrix' },
+            { id: 'logs', label: '📜 Live Audit Logs' },
+          ].map(tab => (
             <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                tab === id
-                  ? 'bg-xpos-600 text-white shadow-lg shadow-xpos-500/30'
-                  : 'text-dark-400 hover:text-white hover:bg-white/5'
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`px-4 py-2.5 rounded-2xl font-black text-xs md:text-sm transition-all flex items-center gap-2 ${
+                activeTab === tab.id
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                  : 'bg-[#131b2e] text-slate-400 hover:text-white border border-slate-800/80 hover:bg-slate-800'
               }`}
             >
-              <Icon className="w-4 h-4" /> {label}
+              {tab.label}
             </button>
           ))}
         </div>
 
-        {/* ════════════════════════════════════════════════ */}
-        {/* TAB 1: REAL-TIME DASHBOARD OVERVIEW */}
-        {/* ════════════════════════════════════════════════ */}
-        {tab === 'dashboard' && stats && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-            {/* Real-time Metric Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Revenue */}
-              <div className="glass-card p-6 rounded-3xl border border-accent-green/20 bg-gradient-to-br from-accent-green/10 via-transparent to-transparent relative overflow-hidden">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-accent-green/20 flex items-center justify-center">
-                    <DollarSign className="w-6 h-6 text-accent-green" />
-                  </div>
-                  <span className="flex items-center gap-1 text-accent-green text-xs font-bold bg-accent-green/10 px-2 py-1 rounded-full">
-                    <TrendingUp className="w-3.5 h-3.5" /> TODAY
-                  </span>
-                </div>
-                <p className="text-4xl font-bold text-white font-display">₹{stats.today.revenue}</p>
-                <p className="text-dark-400 text-sm mt-1">Total Revenue Collected</p>
+        {/* ── TAB 1 & 2: JOBS & CODES MANAGEMENT ── */}
+        {(activeTab === 'overview' || activeTab === 'jobs') && (
+          <div className="space-y-4">
+            {/* Search & Filter Bar */}
+            <div className="bg-[#131b2e] border border-slate-800 p-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">
+              <div className="relative flex-1 min-w-[240px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search by Job ID (XP-000001), Document Name, or 6-Digit Code..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-[#0a0f1d] border border-slate-700/80 rounded-2xl pl-10 pr-4 py-2.5 text-xs md:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+                />
               </div>
 
-              {/* Total Jobs */}
-              <div className="glass-card p-6 rounded-3xl border border-xpos-500/20 bg-gradient-to-br from-xpos-600/10 via-transparent to-transparent relative overflow-hidden">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-xpos-600/20 flex items-center justify-center">
-                    <FileText className="w-6 h-6 text-xpos-400" />
-                  </div>
-                  <span className="text-xpos-300 text-xs font-bold bg-xpos-500/10 px-2.5 py-1 rounded-full">
-                    {stats.today.pages} pages printed
-                  </span>
-                </div>
-                <p className="text-4xl font-bold text-white font-display">{stats.today.printJobs}</p>
-                <p className="text-dark-400 text-sm mt-1">Total Print Jobs</p>
-              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-400">Filter Status:</span>
+                {['ALL', 'QUEUED', 'PRINTING', 'COMPLETED', 'CANCELLED'].map(st => (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      statusFilter === st
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-800/80 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
 
-              {/* Successful Prints */}
-              <div className="glass-card p-6 rounded-3xl border border-accent-cyan/20 bg-gradient-to-br from-accent-cyan/10 via-transparent to-transparent relative overflow-hidden">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-accent-cyan/20 flex items-center justify-center">
-                    <CheckCircle2 className="w-6 h-6 text-accent-cyan" />
-                  </div>
-                  <span className="text-accent-rose text-xs font-bold bg-accent-rose/10 px-2 py-1 rounded-full">
-                    {stats.today.failed} failed
-                  </span>
-                </div>
-                <p className="text-4xl font-bold text-white font-display">{stats.today.successful}</p>
-                <p className="text-dark-400 text-sm mt-1">Successful Prints</p>
-              </div>
-
-              {/* Kiosks Online */}
-              <div className="glass-card p-6 rounded-3xl border border-purple-500/20 bg-gradient-to-br from-purple-600/10 via-transparent to-transparent relative overflow-hidden">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-purple-600/20 flex items-center justify-center">
-                    <Printer className="w-6 h-6 text-purple-400" />
-                  </div>
-                  <span className="text-accent-green text-xs font-bold bg-accent-green/10 px-2 py-1 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" /> LIVE
-                  </span>
-                </div>
-                <p className="text-4xl font-bold text-white font-display">{stats.kiosks.online} / {stats.kiosks.total}</p>
-                <p className="text-dark-400 text-sm mt-1">Active Kiosks Online</p>
-              </div>
-            </div>
-
-            {/* Quick Live Control Shortcuts */}
-            <div className="glass-card p-8 rounded-3xl border border-white/10">
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-xpos-400" /> Real-time System Actions
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <button
-                  onClick={() => setTab('jobs')}
-                  className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-5 text-left transition-all hover:scale-[1.02] active:scale-98 group"
+                  onClick={exportJobsCSV}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all ml-2 active:scale-95"
                 >
-                  <FileText className="w-7 h-7 text-xpos-400 mb-3 group-hover:scale-110 transition-transform" />
-                  <p className="font-bold text-white text-base">Inspect Live Jobs Queue</p>
-                  <p className="text-xs text-dark-400 mt-1">View active printing jobs & status</p>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
                 </button>
-                <button
-                  onClick={() => setTab('pricing')}
-                  className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-5 text-left transition-all hover:scale-[1.02] active:scale-98 group"
-                >
-                  <DollarSign className="w-7 h-7 text-accent-green mb-3 group-hover:scale-110 transition-transform" />
-                  <p className="font-bold text-white text-base">Adjust Pricing Rules</p>
-                  <p className="text-xs text-dark-400 mt-1">Change B&W / Color page rates in real-time</p>
-                </button>
-                <button
-                  onClick={() => setTab('kiosks')}
-                  className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-5 text-left transition-all hover:scale-[1.02] active:scale-98 group"
-                >
-                  <Printer className="w-7 h-7 text-purple-400 mb-3 group-hover:scale-110 transition-transform" />
-                  <p className="font-bold text-white text-base">Monitor Hardware Kiosks</p>
-                  <p className="text-xs text-dark-400 mt-1">Check CPU, RAM & printer connection</p>
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* ════════════════════════════════════════════════ */}
-        {/* TAB 2: LIVE PRINT QUEUE & JOBS */}
-        {/* ════════════════════════════════════════════════ */}
-        {tab === 'jobs' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => { setStatusFilter(e.target.value); setJobsPage(1); }}
-                  className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-white outline-none focus:border-xpos-500"
-                >
-                  <option value="" className="bg-[#0c1024]">All Print Statuses</option>
-                  <option value="CREATED" className="bg-[#0c1024]">Created</option>
-                  <option value="PAID" className="bg-[#0c1024]">Paid</option>
-                  <option value="QUEUED" className="bg-[#0c1024]">Queued</option>
-                  <option value="SENDING" className="bg-[#0c1024]">Sending</option>
-                  <option value="PRINTING" className="bg-[#0c1024]">Printing (Active)</option>
-                  <option value="COMPLETED" className="bg-[#0c1024]">Completed</option>
-                  <option value="PRINT_FAILED" className="bg-[#0c1024]">Failed</option>
-                </select>
-                <span className="text-dark-400 text-sm font-medium">{jobsTotal} Total Jobs Recorded</span>
               </div>
             </div>
 
             {/* Jobs Table */}
-            <div className="glass-card rounded-3xl overflow-hidden border border-white/10">
+            <div className="bg-[#131b2e] border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead>
-                    <tr className="border-b border-white/10 text-dark-400 bg-white/5">
-                      <th className="px-5 py-4 font-bold">Job ID</th>
-                      <th className="px-4 py-4 font-bold">6-Digit OTP Code</th>
-                      <th className="px-4 py-4 font-bold">Document</th>
-                      <th className="px-4 py-4 font-bold">Status</th>
-                      <th className="px-4 py-4 font-bold">Format</th>
-                      <th className="px-4 py-4 font-bold">Pages</th>
-                      <th className="px-4 py-4 font-bold">Amount</th>
-                      <th className="px-4 py-4 font-bold">Payment</th>
-                      <th className="px-4 py-4 font-bold">Assigned Kiosk</th>
-                      <th className="px-4 py-4 font-bold">Uploaded At</th>
-                      <th className="px-4 py-4 font-bold">Printed At</th>
+                <table className="w-full text-left text-xs md:text-sm">
+                  <thead className="bg-[#0e1628] text-slate-400 font-bold border-b border-slate-800 text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="p-4">Job ID / File</th>
+                      <th className="p-4">6-Digit Code</th>
+                      <th className="p-4">Settings</th>
+                      <th className="p-4">Price</th>
+                      <th className="p-4">Status</th>
+                      <th className="p-4">Kiosk</th>
+                      <th className="p-4">Time</th>
+                      <th className="p-4 text-right">Super Admin Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {jobs.map((job) => (
-                      <tr key={job.id} className="hover:bg-white/5 transition-colors">
-                        <td className="px-5 py-4 font-mono font-bold text-xpos-300">{job.displayId}</td>
-                        <td className="px-4 py-4 font-mono">
-                          {job.printCode ? (
-                            <span className="px-3 py-1.5 bg-xpos-500/25 border-2 border-xpos-400 text-white rounded-xl font-bold text-sm shadow-md tracking-wider inline-block">
-                              {job.printCode}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 bg-white/5 text-dark-500 rounded-lg text-xs font-mono">Pending</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-4 truncate max-w-[150px] text-white font-medium">{job.fileName || 'Document'}</td>
-                        <td className="px-4 py-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(job.status)}`}>
-                            {job.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-dark-300 text-xs">
-                          {job.colorMode === 'BW' ? 'B&W' : 'Color'} • {job.sides === 'DOUBLE' ? 'Duplex' : 'Single'}
-                        </td>
-                        <td className="px-4 py-4 text-white font-medium">{job.totalPages}</td>
-                        <td className="px-4 py-4 font-bold text-accent-green">₹{job.totalPrice}</td>
-                        <td className="px-4 py-4">
-                          <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${job.paymentStatus === 'PAID' ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-amber/20 text-accent-amber'}`}>
-                            {job.paymentStatus || 'PENDING'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-dark-300 font-mono text-xs">
-                          {job.kioskName ? `${job.kioskName} (MF280)` : 'Any Kiosk'}
-                        </td>
-                        <td className="px-4 py-4 text-dark-400 font-mono text-xs">{formatTime(job.createdAt)}</td>
-                        <td className="px-4 py-4 font-mono text-xs">
-                          {job.completedAt ? (
-                            <span className="text-accent-green font-semibold flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> {formatTime(job.completedAt)}
-                            </span>
-                          ) : job.status === 'PRINTING' ? (
-                            <span className="text-accent-cyan font-semibold animate-pulse flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan animate-ping" /> Printing now
-                            </span>
-                          ) : (
-                            <span className="text-dark-500">Waiting for Kiosk</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {jobs.length === 0 && (
+                  <tbody className="divide-y divide-slate-800/80">
+                    {loading ? (
                       <tr>
-                        <td colSpan={11} className="px-6 py-12 text-center text-dark-400">No print jobs found</td>
+                        <td colSpan={8} className="p-10 text-center text-slate-400">
+                          <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-2" />
+                          <span>Loading print queue & live codes...</span>
+                        </td>
                       </tr>
+                    ) : jobs.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-10 text-center text-slate-400">
+                          No print jobs found matching filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      jobs.map(job => (
+                        <tr key={job.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="p-4">
+                            <div className="font-mono font-black text-white text-sm">{job.displayId}</div>
+                            <div className="text-slate-400 text-xs truncate max-w-[180px] font-medium" title={job.fileName}>
+                              {job.fileName}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            {job.printCode ? (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-black text-base text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/30">
+                                  {job.printCode}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 italic">None</span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <div className="font-bold text-slate-300">{job.totalPages} pgs • {job.colorMode}</div>
+                            <div className="text-slate-500 text-[11px]">{job.copies} copy • {job.sides}</div>
+                          </td>
+                          <td className="p-4">
+                            <div className="font-black text-emerald-400">₹{job.totalPrice}</div>
+                            <div className="text-[10px] text-slate-500 uppercase">{job.paymentStatus || 'PAID'}</div>
+                          </td>
+                          <td className="p-4">
+                            {getStatusBadge(job.status)}
+                          </td>
+                          <td className="p-4">
+                            <span className="font-bold text-slate-300">{job.kioskName || 'Any Kiosk'}</span>
+                          </td>
+                          <td className="p-4 text-slate-400 text-xs font-mono">
+                            {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="p-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Inspect */}
+                              <button
+                                onClick={() => setSelectedJob(job)}
+                                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-400 transition-all"
+                                title="Inspect Job Details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+
+                              {/* Cancel Active Job */}
+                              {job.status !== 'COMPLETED' && job.status !== 'CANCELLED' && (
+                                <button
+                                  onClick={() => handleCancelJob(job.id)}
+                                  disabled={actionLoading === job.id}
+                                  className="p-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all active:scale-95"
+                                  title="Cancel Print Job"
+                                >
+                                  {actionLoading === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                                </button>
+                              )}
+
+                              {/* Extend 6-digit Code */}
+                              {job.printCode && job.status === 'QUEUED' && (
+                                <button
+                                  onClick={() => handleExtendCode(job.printCode!)}
+                                  disabled={actionLoading === job.printCode}
+                                  className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-all active:scale-95"
+                                  title="Extend Code (+24 Hours)"
+                                >
+                                  <Clock className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
-          </motion.div>
+          </div>
         )}
 
-        {/* ════════════════════════════════════════════════ */}
-        {/* TAB 3: KIOSKS & HARDWARE MONITOR */}
-        {/* ════════════════════════════════════════════════ */}
-        {tab === 'kiosks' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+        {/* ── TAB 3: KIOSK FLEET MANAGEMENT ── */}
+        {activeTab === 'kiosks' && (
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-display font-bold text-white mb-1">Kiosks & Hardware Monitor</h2>
-                <p className="text-dark-400 text-sm">Manage multi-location kiosks and monitor printer readiness in real-time.</p>
+                <h2 className="text-xl font-black text-white">Kiosk Stations & Hardware Fleet</h2>
+                <p className="text-slate-400 text-xs">Monitor paper levels, toner, hardware health, and maintenance modes</p>
               </div>
               <button
-                onClick={() => setShowAddKiosk(true)}
-                className="btn-primary flex items-center gap-2 py-2.5 px-5 text-sm font-bold shadow-lg shadow-xpos-500/20"
+                onClick={() => setShowAddKioskModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs md:text-sm shadow-lg shadow-blue-600/30 transition-all active:scale-95"
               >
-                <Plus className="w-4 h-4" /> Add New Kiosk
+                <Plus className="w-4 h-4" />
+                <span>Add Kiosk Station</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {kiosks.map((kiosk) => (
-                <div key={kiosk.id} className="glass-card p-6 rounded-3xl border border-white/10 hover:border-xpos-500/40 transition-all">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${kiosk.isOnline ? 'bg-accent-green/20' : 'bg-accent-rose/20'}`}>
-                        <Printer className={`w-6 h-6 ${kiosk.isOnline ? 'text-accent-green' : 'text-accent-rose'}`} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {kiosks.map(kiosk => (
+                <div
+                  key={kiosk.id}
+                  className={`bg-[#131b2e] border rounded-3xl p-6 space-y-5 transition-all shadow-xl ${
+                    kiosk.status === 'ACTIVE' ? 'border-slate-800' : 'border-amber-500/40 bg-[#161a28]'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-black text-white">{kiosk.displayId}</h3>
+                        <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
+                          kiosk.status === 'ACTIVE'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {kiosk.status}
+                        </span>
                       </div>
-                      <div>
-                        <p className="font-bold text-lg text-white font-display">{kiosk.displayId}</p>
-                        <p className="text-xs text-dark-400">{kiosk.name}</p>
-                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">{kiosk.name} • {kiosk.location}</p>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
-                      kiosk.isOnline ? 'bg-accent-green/20 text-accent-green border border-accent-green/30' : 'bg-accent-rose/20 text-accent-rose border border-accent-rose/30'
-                    }`}>
-                      <span className={`w-2 h-2 rounded-full ${kiosk.isOnline ? 'bg-accent-green animate-pulse' : 'bg-accent-rose'}`} />
-                      {kiosk.isOnline ? 'ONLINE' : 'OFFLINE'}
-                    </span>
+
+                    <div className="p-3 rounded-2xl bg-slate-800 text-blue-400">
+                      <Printer className="w-6 h-6" />
+                    </div>
                   </div>
 
-                  <div className="space-y-2.5 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-dark-400">Location</span>
-                      <span className="text-white font-medium truncate max-w-[180px]">{kiosk.location}</span>
+                  {/* Printer Telemetry */}
+                  <div className="grid grid-cols-2 gap-3 text-xs bg-[#0a0f1d] p-3.5 rounded-2xl border border-slate-800/80">
+                    <div>
+                      <span className="text-slate-500 font-bold block text-[10px] uppercase">Printer Engine</span>
+                      <span className="text-white font-black truncate block">{kiosk.printerName}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-dark-400">Printer Status</span>
-                      <span className={kiosk.printerStatus === 'READY' ? 'text-accent-green font-semibold' : 'text-accent-amber font-semibold'}>
-                        {kiosk.printerStatus}
+                    <div>
+                      <span className="text-slate-500 font-bold block text-[10px] uppercase">Hardware Status</span>
+                      <span className="text-emerald-400 font-black flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> {kiosk.printerStatus}
                       </span>
                     </div>
-                    {kiosk.cpu !== null && (
-                      <div className="flex justify-between items-center pt-2 border-t border-white/5 text-xs text-dark-400">
-                        <span className="flex items-center gap-1"><Cpu className="w-3.5 h-3.5 text-xpos-400" /> CPU: {Math.round(kiosk.cpu)}%</span>
-                        <span className="flex items-center gap-1"><HardDrive className="w-3.5 h-3.5 text-accent-cyan" /> RAM: {Math.round(kiosk.ram)}%</span>
-                      </div>
-                    )}
-                    {kiosk.lastHeartbeat && (
-                      <div className="flex justify-between items-center pt-1 text-xs text-dark-500">
-                        <span>Last Heartbeat</span>
-                        <span className="font-mono">{formatTime(kiosk.lastHeartbeat)}</span>
-                      </div>
-                    )}
                   </div>
-                </div>
-              ))}
-            </div>
 
-            {/* Add Kiosk Modal */}
-            <AnimatePresence>
-              {showAddKiosk && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="glass-card p-6 md:p-8 rounded-3xl border border-white/20 w-full max-w-md bg-[#0d1226] text-white shadow-2xl relative"
-                  >
-                    <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-xpos-500/20 flex items-center justify-center">
-                          <Plus className="w-5 h-5 text-xpos-400" />
-                        </div>
-                        <div>
-                          <h3 className="text-xl font-display font-bold text-white">Add New Kiosk</h3>
-                          <p className="text-xs text-dark-400">Register a new physical printing station</p>
-                        </div>
+                  {/* Gauges (Paper & Toner) */}
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-slate-400">Paper Tray</span>
+                        <span className="text-blue-400">{kiosk.paperLevel}%</span>
                       </div>
-                      <button
-                        onClick={() => setShowAddKiosk(false)}
-                        className="text-dark-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
+                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${kiosk.paperLevel}%` }} />
+                      </div>
                     </div>
 
-                    <form onSubmit={handleAddKiosk} className="space-y-4">
-                      <div>
-                        <label className="text-xs font-semibold text-dark-300 block mb-1.5">Kiosk Display ID</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. XPOS-002"
-                          value={newKioskId}
-                          onChange={(e) => setNewKioskId(e.target.value.toUpperCase())}
-                          className="w-full bg-white/5 border border-white/10 focus:border-xpos-500 rounded-xl px-4 py-3 text-white font-mono font-bold text-sm outline-none transition-colors"
-                        />
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-slate-400">Toner Cartridge</span>
+                        <span className="text-purple-400">{kiosk.tonerLevel}%</span>
                       </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-dark-300 block mb-1.5">Kiosk Name / Station</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Library 2nd Floor Kiosk"
-                          value={newKioskName}
-                          onChange={(e) => setNewKioskName(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 focus:border-xpos-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-colors"
-                        />
+                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-purple-500 rounded-full" style={{ width: `${kiosk.tonerLevel}%` }} />
                       </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-dark-300 block mb-1.5">Physical Location</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Campus Block B, Room 204"
-                          value={newKioskLocation}
-                          onChange={(e) => setNewKioskLocation(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 focus:border-xpos-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-colors"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-dark-300 block mb-1.5">Connected Printer Model</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Canon MF280 Series"
-                          value={newKioskPrinter}
-                          onChange={(e) => setNewKioskPrinter(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 focus:border-xpos-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-colors"
-                        />
-                      </div>
-
-                      {kioskAddError && (
-                        <p className="text-xs text-accent-rose font-medium mt-2">{kioskAddError}</p>
-                      )}
-
-                      <div className="flex gap-3 pt-4">
-                        <button
-                          type="button"
-                          onClick={() => setShowAddKiosk(false)}
-                          className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-dark-300 font-semibold text-sm transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={addingKiosk}
-                          className="flex-1 btn-primary py-3 flex items-center justify-center gap-2 text-sm font-bold shadow-lg shadow-xpos-500/20"
-                        >
-                          {addingKiosk ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Register Kiosk'}
-                        </button>
-                      </div>
-                    </form>
-                  </motion.div>
-                </div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        )}
-
-        {/* ════════════════════════════════════════════════ */}
-        {/* TAB 4: DYNAMIC PRICING MANAGER */}
-        {/* ════════════════════════════════════════════════ */}
-        {tab === 'pricing' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl space-y-6">
-            <div>
-              <h2 className="text-2xl font-display font-bold text-white mb-1">Dynamic Pricing Controls</h2>
-              <p className="text-dark-400 text-sm">Changes made here take effect across all kiosks and customer apps instantly in real-time.</p>
-            </div>
-
-            <div className="space-y-4">
-              {pricing.map((rule) => (
-                <div key={rule.id} className="glass-card p-6 rounded-3xl border border-white/10 flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-lg text-white">
-                      {rule.paperSize} — {rule.colorMode === 'BW' ? 'Black & White' : 'Full Color'}
-                    </p>
-                    <p className="text-xs text-dark-400 mt-0.5">{rule.isActive ? 'Active pricing rule' : 'Disabled'}</p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    {editingPrice && editingPrice.paperSize === rule.paperSize && editingPrice.colorMode === rule.colorMode ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-dark-400 font-bold">₹</span>
-                        <input
-                          type="number"
-                          value={editingPrice.price}
-                          onChange={(e) => setEditingPrice({ ...editingPrice, price: e.target.value })}
-                          className="w-20 bg-white/10 border border-xpos-500 rounded-xl px-3 py-2 text-white font-bold text-center outline-none"
-                          autoFocus
-                        />
-                        <span className="text-dark-400 text-xs font-semibold">/page</span>
-                        <button
-                          onClick={() => updatePricing(rule.paperSize, rule.colorMode, parseFloat(editingPrice.price))}
-                          className="px-4 py-2 bg-xpos-600 hover:bg-xpos-500 text-white rounded-xl text-xs font-bold transition-all shadow-md"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditingPrice(null)}
-                          className="px-3 py-2 bg-white/5 hover:bg-white/10 text-dark-400 rounded-xl text-xs"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="text-right">
-                          <p className="text-3xl font-bold font-display text-accent-green">₹{rule.pricePerPage}</p>
-                          <p className="text-xs text-dark-500">per page</p>
-                        </div>
-                        <button
-                          onClick={() => setEditingPrice({ paperSize: rule.paperSize, colorMode: rule.colorMode, price: rule.pricePerPage.toString() })}
-                          className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-semibold text-dark-300 hover:text-white transition-all active:scale-95"
-                        >
-                          Edit Rate
-                        </button>
-                      </>
-                    )}
+                  {/* Controls */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                    <button
+                      onClick={() => handleToggleKioskStatus(kiosk.id, kiosk.status)}
+                      disabled={actionLoading === kiosk.id}
+                      className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 ${
+                        kiosk.status === 'ACTIVE'
+                          ? 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/30'
+                          : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/30'
+                      }`}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                      <span>{kiosk.status === 'ACTIVE' ? 'Set Maintenance' : 'Set Active'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleRebootKiosk(kiosk.id, kiosk.displayId)}
+                      disabled={actionLoading === kiosk.id}
+                      className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all active:scale-95"
+                      title="Remote Reboot"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
-          </motion.div>
+          </div>
         )}
-      </div>
+
+        {/* ── TAB 4: DYNAMIC PRICING MATRIX ── */}
+        {activeTab === 'pricing' && (
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="bg-[#131b2e] border border-slate-800 p-6 rounded-3xl space-y-6 shadow-xl">
+              <div>
+                <h2 className="text-xl font-black text-white">Dynamic Pricing Matrix</h2>
+                <p className="text-slate-400 text-xs mt-1">
+                  Adjust per-page printing rates in real time. Changes take effect instantly across all customer devices and kiosks.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {/* Black & White A4 */}
+                <div className="bg-[#0a0f1d] border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-white">
+                      B&W
+                    </div>
+                    <div>
+                      <h4 className="font-black text-white text-base">Black & White (A4)</h4>
+                      <p className="text-xs text-slate-400">Standard monochrome print</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-black text-slate-400">₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      defaultValue={pricingRules.find(r => r.colorMode === 'BW')?.pricePerPage || 2}
+                      onBlur={(e) => handleUpdatePrice('A4', 'BW', Number(e.target.value))}
+                      className="w-20 bg-[#131b2e] border border-blue-500 rounded-xl px-3 py-2 text-center text-lg font-black text-white focus:outline-none"
+                    />
+                    <span className="text-xs text-slate-500">/ page</span>
+                  </div>
+                </div>
+
+                {/* Color A4 */}
+                <div className="bg-[#0a0f1d] border border-slate-800 p-5 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-pink-500 to-indigo-500 flex items-center justify-center font-black text-white">
+                      CLR
+                    </div>
+                    <div>
+                      <h4 className="font-black text-white text-base">Full Color (A4)</h4>
+                      <p className="text-xs text-slate-400">High-resolution vibrant color print</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-black text-slate-400">₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      defaultValue={pricingRules.find(r => r.colorMode === 'COLOR')?.pricePerPage || 10}
+                      onBlur={(e) => handleUpdatePrice('A4', 'COLOR', Number(e.target.value))}
+                      className="w-20 bg-[#131b2e] border border-blue-500 rounded-xl px-3 py-2 text-center text-lg font-black text-white focus:outline-none"
+                    />
+                    <span className="text-xs text-slate-500">/ page</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB 5: AUDIT LOGS ── */}
+        {activeTab === 'logs' && (
+          <div className="bg-[#131b2e] border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <h2 className="text-lg font-black text-white">System & Security Audit Trail</h2>
+            <div className="divide-y divide-slate-800/80">
+              {auditLogs.length === 0 ? (
+                <p className="text-slate-400 text-xs py-6 text-center">No recent audit events logged.</p>
+              ) : (
+                auditLogs.map((log: any) => (
+                  <div key={log.id} className="py-3 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-black text-blue-400 uppercase bg-blue-500/10 px-2.5 py-1 rounded-md border border-blue-500/20">
+                        {log.action}
+                      </span>
+                      <span className="text-slate-300">{log.entityType} ({log.entityId || 'Global'})</span>
+                    </div>
+                    <span className="text-slate-500 font-mono">
+                      {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* ── MODAL: INSPECT JOB DETAILS ── */}
+      <AnimatePresence>
+        {selectedJob && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#131b2e] border border-slate-700 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+                <div>
+                  <h3 className="text-lg font-black text-white">{selectedJob.displayId}</h3>
+                  <p className="text-xs text-slate-400">Detailed Print Job Telemetry</p>
+                </div>
+                <button
+                  onClick={() => setSelectedJob(null)}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                  <span className="text-slate-400 font-bold">Document Name</span>
+                  <span className="text-white font-black">{selectedJob.fileName}</span>
+                </div>
+                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                  <span className="text-slate-400 font-bold">6-Digit Release Code</span>
+                  <span className="text-amber-400 font-mono font-black text-sm">{selectedJob.printCode || 'None'}</span>
+                </div>
+                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                  <span className="text-slate-400 font-bold">Total Pages / Copies</span>
+                  <span className="text-white font-bold">{selectedJob.totalPages} pages ({selectedJob.copies} copy)</span>
+                </div>
+                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                  <span className="text-slate-400 font-bold">Amount Paid</span>
+                  <span className="text-emerald-400 font-black">₹{selectedJob.totalPrice}</span>
+                </div>
+                <div className="flex justify-between bg-[#0a0f1d] p-3 rounded-xl">
+                  <span className="text-slate-400 font-bold">Assigned Kiosk</span>
+                  <span className="text-white font-bold">{selectedJob.kioskName || 'Any Kiosk Station'}</span>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center gap-3">
+                {selectedJob.status !== 'COMPLETED' && selectedJob.status !== 'CANCELLED' && (
+                  <button
+                    onClick={() => handleCancelJob(selectedJob.id)}
+                    className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all active:scale-95"
+                  >
+                    Cancel This Job & Invalidate Code
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedJob(null)}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MODAL: ADD KIOSK STATION ── */}
+      <AnimatePresence>
+        {showAddKioskModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#131b2e] border border-slate-700 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+                <div>
+                  <h3 className="text-lg font-black text-white">Add Kiosk Station</h3>
+                  <p className="text-xs text-slate-400">Register new physical touchpoint in cloud</p>
+                </div>
+                <button
+                  onClick={() => setShowAddKioskModal(false)}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddKiosk} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">Kiosk ID (e.g. XPOS-002)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="XPOS-002"
+                    value={newKioskDisplayId}
+                    onChange={(e) => setNewKioskDisplayId(e.target.value)}
+                    className="w-full bg-[#0a0f1d] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white font-mono font-bold focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">Station Name</label>
+                  <input
+                    type="text"
+                    placeholder="Library Lobby Kiosk"
+                    value={newKioskName}
+                    onChange={(e) => setNewKioskName(e.target.value)}
+                    className="w-full bg-[#0a0f1d] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1">Physical Location</label>
+                  <input
+                    type="text"
+                    placeholder="Building B, Floor 1"
+                    value={newKioskLocation}
+                    onChange={(e) => setNewKioskLocation(e.target.value)}
+                    className="w-full bg-[#0a0f1d] border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="submit"
+                    disabled={actionLoading === 'add-kiosk'}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    {actionLoading === 'add-kiosk' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    <span>Save & Register Kiosk</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddKioskModal(false)}
+                    className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MODAL: EMERGENCY STOP & FLUSH QUEUE ── */}
+      <AnimatePresence>
+        {showEmergencyModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#1e131d] border border-rose-500/50 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-rose-300">EMERGENCY FLUSH</h3>
+                  <p className="text-xs text-slate-400">Cancel all active printing jobs immediately</p>
+                </div>
+              </div>
+
+              <p className="text-slate-300 text-xs leading-relaxed">
+                This will immediately cancel all queued and in-progress print jobs across all kiosks and invalidate all active release codes. Use in case of paper jams, hardware emergencies, or maintenance shutdowns.
+              </p>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  onClick={handleEmergencyFlush}
+                  disabled={actionLoading === 'emergency-flush'}
+                  className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30"
+                >
+                  {actionLoading === 'emergency-flush' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  <span>CONFIRM FLUSH ALL JOBS</span>
+                </button>
+                <button
+                  onClick={() => setShowEmergencyModal(false)}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
