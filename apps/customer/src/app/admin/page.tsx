@@ -254,6 +254,26 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleDeleteJob = async (jobId: string, displayId: string) => {
+    if (!confirm(`Are you sure you want to permanently delete job ${displayId}? This action cannot be undone.`)) return;
+    setActionLoading(`delete-${jobId}`);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/admin/jobs/${jobId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Job ${displayId} permanently deleted`);
+        fetchData();
+        setSelectedJob(null);
+      } else {
+        showToast(data.error || 'Failed to delete job', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleToggleKioskStatus = async (kioskId: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE';
     setActionLoading(kioskId);
@@ -686,29 +706,39 @@ export default function AdminDashboardPage() {
                                 <Eye className="w-4 h-4" />
                               </button>
 
-                              {/* Cancel Active Job */}
-                              {job.status !== 'COMPLETED' && job.status !== 'CANCELLED' && (
-                                <button
-                                  onClick={() => handleCancelJob(job.id)}
-                                  disabled={actionLoading === job.id}
-                                  className="p-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all active:scale-95"
-                                  title="Cancel Print Job"
-                                >
-                                  {actionLoading === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
-                                </button>
-                              )}
-
-                              {/* Extend 6-digit Code */}
+                              {/* Extend 6-digit Code (+24 Hours) */}
                               {job.printCode && job.status === 'QUEUED' && (
                                 <button
                                   onClick={() => handleExtendCode(job.printCode!)}
                                   disabled={actionLoading === job.printCode}
                                   className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-all active:scale-95"
-                                  title="Extend Code (+24 Hours)"
+                                  title="Add +24 Hours to Code"
                                 >
                                   <Clock className="w-4 h-4" />
                                 </button>
                               )}
+
+                              {/* Stop / Cancel Active Job */}
+                              {job.status !== 'COMPLETED' && job.status !== 'CANCELLED' && (
+                                <button
+                                  onClick={() => handleCancelJob(job.id)}
+                                  disabled={actionLoading === job.id}
+                                  className="p-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all active:scale-95"
+                                  title="Stop & Cancel Job"
+                                >
+                                  {actionLoading === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                                </button>
+                              )}
+
+                              {/* Permanent Delete Option */}
+                              <button
+                                onClick={() => handleDeleteJob(job.id, job.displayId)}
+                                disabled={actionLoading === `delete-${job.id}`}
+                                className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-all active:scale-95"
+                                title="Delete Job Record Permanently"
+                              >
+                                {actionLoading === `delete-${job.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -974,18 +1004,38 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center gap-3">
+              <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {selectedJob.printCode && selectedJob.status === 'QUEUED' && (
+                  <button
+                    onClick={() => handleExtendCode(selectedJob.printCode!)}
+                    className="py-2.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Extend Code (+24 Hours)</span>
+                  </button>
+                )}
+
                 {selectedJob.status !== 'COMPLETED' && selectedJob.status !== 'CANCELLED' && (
                   <button
                     onClick={() => handleCancelJob(selectedJob.id)}
-                    className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all active:scale-95"
+                    className="py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
                   >
-                    Cancel This Job & Invalidate Code
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Stop Job & Invalidate Code</span>
                   </button>
                 )}
+
+                <button
+                  onClick={() => handleDeleteJob(selectedJob.id, selectedJob.displayId)}
+                  className="py-2.5 bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 border border-slate-700 rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Record Permanently</span>
+                </button>
+
                 <button
                   onClick={() => setSelectedJob(null)}
-                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
                 >
                   Close
                 </button>

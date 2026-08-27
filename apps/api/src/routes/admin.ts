@@ -290,6 +290,31 @@ router.post('/codes/:id/extend', async (req: Request, res: Response) => {
   }
 });
 
+// ── Delete Print Job Permanently ──
+router.delete('/jobs/:id', async (req: Request, res: Response) => {
+  try {
+    const prisma = req.app.locals.prisma;
+    const { id } = req.params;
+
+    const job = await prisma.printJob.findFirst({
+      where: { OR: [{ id }, { displayId: id }] },
+    });
+
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    // Delete associated print code and job
+    await prisma.printCode.deleteMany({ where: { jobId: job.id } });
+    await prisma.printJob.delete({ where: { id: job.id } });
+
+    res.json({ success: true, message: `Job ${job.displayId} permanently deleted` });
+  } catch (error) {
+    console.error('Delete job error:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete job' });
+  }
+});
+
 // ── 6. Emergency Stop & Flush Queue ──
 router.post('/queue/flush', async (req: Request, res: Response) => {
   try {
