@@ -26,9 +26,9 @@ import {
   Zap,
   Check
 } from 'lucide-react';
-import { createSession, uploadFile, calculatePrice, getKiosks, getPricing, createJob } from '@/lib/api';
-import { renderPdfPages } from '@/lib/pdf-preview';
-import { playKeySound } from '@/lib/sound';
+import { createSession, uploadFile, calculatePrice, getKiosks, getPricing, createJob } from '../../lib/api';
+import { renderPdfPages } from '../../lib/pdf-preview';
+import { playKeySound } from '../../lib/sound';
 
 type Step = 'upload' | 'settings' | 'demo' | 'kiosk' | 'summary';
 

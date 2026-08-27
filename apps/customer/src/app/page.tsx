@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Printer, QrCode, Hash, Zap, Shield, Clock, ArrowRight, Sparkles, FileText } from 'lucide-react';
 
-import { playKeySound } from '@/lib/sound';
+import { playKeySound } from '../lib/sound';
 
 export default function HomePage() {
   const router = useRouter();

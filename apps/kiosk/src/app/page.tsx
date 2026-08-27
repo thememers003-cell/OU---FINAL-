@@ -23,8 +23,8 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { io, Socket } from 'socket.io-client';
-import { getRandomCharmingLine, getRandomCompletionLine } from '@/lib/charming-lines';
-import { playKeySound } from '@/lib/sound';
+import { getRandomCharmingLine, getRandomCompletionLine } from '../lib/charming-lines';
+import { playKeySound } from '../lib/sound';
 
 function getApiUrl(): string {
   if (typeof window !== 'undefined') {

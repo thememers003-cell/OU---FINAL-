@@ -4,8 +4,8 @@ import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CheckCircle2, Loader2, Printer, Send, FileText, XCircle } from 'lucide-react';
-import { getJob } from '@/lib/api';
-import { connectSocket, joinSession } from '@/lib/socket';
+import { getJob } from '../../../lib/api';
+import { connectSocket, joinSession } from '../../../lib/socket';
 
 function JobStatusContent({ params }: { params: { id: string } | Promise<{ id: string }> }) {
   const [jobId, setJobId] = useState<string>('');

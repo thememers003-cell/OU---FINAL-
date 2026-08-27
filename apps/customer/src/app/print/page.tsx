@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Printer, CheckCircle2, Loader2 } from 'lucide-react';
-import { createSession, getKiosk } from '@/lib/api';
+import { createSession, getKiosk } from '../../lib/api';
 
 function PrintConnectedContent() {
   const router = useRouter();

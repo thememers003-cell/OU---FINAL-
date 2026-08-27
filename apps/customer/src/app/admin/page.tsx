@@ -25,7 +25,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { getApiUrl } from '@/lib/api';
+import { getApiUrl } from '../../lib/api';
 
 interface DashboardStats {
   today: {

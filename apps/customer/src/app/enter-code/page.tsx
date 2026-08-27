@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Hash, Check, Loader2 } from 'lucide-react';
-import { getJob } from '@/lib/api';
-import { playKeySound } from '@/lib/sound';
+import { getJob } from '../../lib/api';
+import { playKeySound } from '../../lib/sound';
 
 export default function EnterCodePage() {
   const router = useRouter();

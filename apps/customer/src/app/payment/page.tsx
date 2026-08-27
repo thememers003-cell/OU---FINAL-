@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader2, CheckCircle2, XCircle, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { createPayment, verifyPayment } from '@/lib/api';
+import { createPayment, verifyPayment } from '../../lib/api';
 
 function PaymentContent() {
   const router = useRouter();

@@ -4,9 +4,9 @@ import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Clock, Copy, ArrowLeft, Loader2, Camera, ShieldCheck, Check, Printer, Sparkles, Heart, MessageCircleHeart } from 'lucide-react';
-import { generatePrintCode, getJob } from '@/lib/api';
-import { getRandomCharmingLine, getRandomCompletionLine } from '@/lib/charming-lines';
-import { playKeySound } from '@/lib/sound';
+import { generatePrintCode, getJob } from '../../lib/api';
+import { getRandomCharmingLine, getRandomCompletionLine } from '../../lib/charming-lines';
+import { playKeySound } from '../../lib/sound';
 
 function CodeContent() {
   const router = useRouter();
