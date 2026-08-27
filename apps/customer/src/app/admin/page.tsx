@@ -37,7 +37,8 @@ import {
   Bell,
   Settings,
   Database,
-  Cpu
+  Cpu,
+  Check
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { getApiUrl } from '../../lib/api';
@@ -110,7 +111,7 @@ interface PricingRule {
   isActive: boolean;
 }
 
-export default function AdminDashboardPage() {
+export default function CustomerAdminRoutePage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'jobs' | 'kiosks' | 'pricing' | 'logs'>('overview');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [jobs, setJobs] = useState<PrintJob[]>([]);
@@ -119,6 +120,13 @@ export default function AdminDashboardPage() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Real-time second clock for live countdowns
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,6 +147,16 @@ export default function AdminDashboardPage() {
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setActionMessage({ type, text });
     setTimeout(() => setActionMessage(null), 4000);
+  };
+
+  const getRemainingCountdown = (expiresAtStr: string | null) => {
+    if (!expiresAtStr) return null;
+    const diff = Math.floor((new Date(expiresAtStr).getTime() - now) / 1000);
+    if (diff <= 0) return 'Expired';
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    const s = diff % 60;
+    return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s left`;
   };
 
   const fetchData = useCallback(async () => {
@@ -190,7 +208,7 @@ export default function AdminDashboardPage() {
 
   // ── Action Handlers ──
   const handleCancelJob = async (jobId: string) => {
-    if (!confirm('Cancel this print job and revoke its 6-digit release code?')) return;
+    if (!confirm('Cancel this print job and deactivate its 6-digit release code? The customer will be informed immediately.')) return;
     setActionLoading(jobId);
     try {
       const res = await fetch(`${getApiUrl()}/api/admin/jobs/${jobId}/cancel`, {
@@ -204,6 +222,25 @@ export default function AdminDashboardPage() {
         setSelectedJob(null);
       } else {
         showToast(data.error || 'Failed to cancel job', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Network error', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRestoreJob = async (jobId: string, displayId: string) => {
+    setActionLoading(`restore-${jobId}`);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/admin/jobs/${jobId}/restore`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Job ${displayId} restored to active queue!`);
+        fetchData();
+        setSelectedJob(null);
+      } else {
+        showToast(data.error || 'Failed to restore job', 'error');
       }
     } catch (e: any) {
       showToast(e.message || 'Network error', 'error');
@@ -367,7 +404,7 @@ export default function AdminDashboardPage() {
 
   const exportJobsCSV = () => {
     if (jobs.length === 0) return;
-    const headers = ['Display ID', 'Status', 'File Name', 'Pages', 'Price (INR)', 'Code', 'Kiosk', 'Date'];
+    const headers = ['Display ID', 'Status', 'File Name', 'Pages', 'Price (INR)', 'Code', 'Created At', 'Completed At'];
     const rows = jobs.map(j => [
       j.displayId,
       j.status,
@@ -375,8 +412,8 @@ export default function AdminDashboardPage() {
       j.totalPages,
       j.totalPrice,
       j.printCode || 'N/A',
-      j.kioskName || 'N/A',
       j.createdAt,
+      j.completedAt || 'In Queue',
     ]);
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -398,7 +435,7 @@ export default function AdminDashboardPage() {
       case 'QUEUED':
         return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-700 border border-amber-300 shadow-sm"><Clock className="w-3.5 h-3.5 text-amber-600" /> CODE ACTIVE</span>;
       case 'CANCELLED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-600 border border-slate-200"><Ban className="w-3.5 h-3.5 text-slate-400" /> CANCELLED</span>;
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-50 text-rose-700 border border-rose-200"><Ban className="w-3.5 h-3.5 text-rose-500" /> CANCELLED</span>;
       case 'FAILED':
         return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-50 text-rose-700 border border-rose-200"><XCircle className="w-3.5 h-3.5 text-rose-600" /> FAILED</span>;
       default:
@@ -420,10 +457,10 @@ export default function AdminDashboardPage() {
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-lg text-slate-900 tracking-tight">XPOS</span>
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-sky-100 text-sky-700 rounded-md border border-sky-200">
-                  Cloud Admin
+                  Super Admin
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-semibold">Enterprise Command Center</p>
+              <p className="text-[11px] text-slate-400 font-semibold">Live Enterprise Cockpit</p>
             </div>
           </div>
 
@@ -483,7 +520,7 @@ export default function AdminDashboardPage() {
               {activeTab === 'pricing' && 'Dynamic Pricing Matrix'}
               {activeTab === 'logs' && 'Security & System Audit Trail'}
             </h1>
-            <p className="text-xs text-slate-400">Real-time status synced with Render cloud backend</p>
+            <p className="text-xs text-slate-400">Live time synchronization with Render cloud backend</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -528,7 +565,7 @@ export default function AdminDashboardPage() {
 
         {/* Main Body */}
         <main className="p-6 lg:p-10 max-w-[1700px] w-full mx-auto space-y-8">
-          {/* ── METRIC CARDS (Clean Light Blue & White Luxury) ── */}
+          {/* ── METRIC CARDS ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
             {/* Revenue */}
             <div className="bg-white border border-sky-100 p-6 rounded-3xl shadow-xl shadow-sky-950/5 relative overflow-hidden transition-all hover:border-sky-300">
@@ -642,64 +679,87 @@ export default function AdminDashboardPage() {
                     <thead className="bg-sky-50/60 text-slate-600 font-bold border-b border-sky-100 text-[11px] uppercase tracking-wider">
                       <tr>
                         <th className="p-4">Job ID / File</th>
-                        <th className="p-4">6-Digit Code</th>
-                        <th className="p-4">Print Specs</th>
-                        <th className="p-4">Amount</th>
+                        <th className="p-4">6-Digit Code & Expiry</th>
+                        <th className="p-4">Specs & Amount</th>
                         <th className="p-4">Status</th>
-                        <th className="p-4">Kiosk Station</th>
-                        <th className="p-4">Time</th>
+                        <th className="p-4">Exact Timeline</th>
                         <th className="p-4 text-right">Super Admin Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-sky-100/80">
                       {loading ? (
                         <tr>
-                          <td colSpan={8} className="p-12 text-center text-slate-400">
+                          <td colSpan={6} className="p-12 text-center text-slate-400">
                             <Loader2 className="w-8 h-8 animate-spin mx-auto text-sky-500 mb-2" />
-                            <span>Loading print queue...</span>
+                            <span>Loading print queue & live codes...</span>
                           </td>
                         </tr>
                       ) : jobs.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="p-12 text-center text-slate-400">
-                            No print jobs found.
+                          <td colSpan={6} className="p-12 text-center text-slate-400">
+                            No print jobs found matching filters.
                           </td>
                         </tr>
                       ) : (
                         jobs.map(job => (
                           <tr key={job.id} className="hover:bg-sky-50/40 transition-colors">
+                            {/* Job ID & File */}
                             <td className="p-4">
                               <div className="font-mono font-black text-slate-900 text-sm">{job.displayId}</div>
-                              <div className="text-slate-500 text-xs truncate max-w-[220px] font-medium" title={job.fileName}>
+                              <div className="text-slate-500 text-xs truncate max-w-[200px] font-medium" title={job.fileName}>
                                 {job.fileName}
                               </div>
                             </td>
+
+                            {/* 6-Digit Code & Live Remaining Time */}
                             <td className="p-4">
                               {job.printCode ? (
-                                <span className="font-mono font-black text-base text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200 shadow-sm">
-                                  {job.printCode}
-                                </span>
+                                <div className="space-y-1">
+                                  <span className="font-mono font-black text-base text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200 shadow-sm inline-block">
+                                    {job.printCode}
+                                  </span>
+                                  {job.status === 'QUEUED' && (
+                                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-sky-600">
+                                      <Clock className="w-3 h-3 animate-spin text-sky-500" />
+                                      <span>{getRemainingCountdown(job.printCodeExpiresAt)}</span>
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-slate-400 italic">None</span>
                               )}
                             </td>
+
+                            {/* Specs & Price */}
                             <td className="p-4">
-                              <div className="font-bold text-slate-800">{job.totalPages} pgs • {job.colorMode}</div>
-                              <div className="text-slate-400 text-[11px]">{job.copies} copy • {job.sides}</div>
+                              <div className="font-black text-slate-900 text-sm">₹{job.totalPrice}</div>
+                              <div className="text-slate-500 text-xs">{job.totalPages} pgs • {job.colorMode} ({job.copies} copy)</div>
                             </td>
-                            <td className="p-4">
-                              <div className="font-black text-slate-900 text-base">₹{job.totalPrice}</div>
-                              <div className="text-[10px] text-emerald-600 font-bold uppercase">{job.paymentStatus || 'PAID'}</div>
-                            </td>
+
+                            {/* Status */}
                             <td className="p-4">
                               {getStatusBadge(job.status)}
                             </td>
-                            <td className="p-4">
-                              <span className="font-bold text-slate-700">{job.kioskName || 'Any Station'}</span>
+
+                            {/* Exact Timeline (Created & Completed Timestamps) */}
+                            <td className="p-4 text-xs font-mono space-y-1">
+                              <div className="text-slate-700">
+                                <span className="text-slate-400 font-bold uppercase text-[10px]">Created: </span>
+                                {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} ({new Date(job.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })})
+                              </div>
+                              {job.completedAt ? (
+                                <div className="text-emerald-700 font-bold">
+                                  <span className="text-emerald-500 font-bold uppercase text-[10px]">Printed: </span>
+                                  {new Date(job.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </div>
+                              ) : (
+                                <div className="text-slate-400 italic text-[11px]">
+                                  {job.status === 'CANCELLED' ? 'Deactivated' : 'In Queue / Awaiting Kiosk'}
+                                </div>
+                              )}
                             </td>
-                            <td className="p-4 text-slate-500 text-xs font-mono">
-                              {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </td>
+
+                            {/* Actions Column with Restore, Cancel, Extend, Delete */}
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
                                 {/* Inspect */}
@@ -711,31 +771,43 @@ export default function AdminDashboardPage() {
                                   <Eye className="w-4 h-4" />
                                 </button>
 
-                                {/* Extend 6-digit Code (+24 Hours) */}
+                                {/* 🔄 Restore / Reactivate Cancelled Job */}
+                                {job.status === 'CANCELLED' && (
+                                  <button
+                                    onClick={() => handleRestoreJob(job.id, job.displayId)}
+                                    disabled={actionLoading === `restore-${job.id}`}
+                                    className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all active:scale-95 shadow-sm"
+                                    title="Restore / Reactivate Job & Code"
+                                  >
+                                    {actionLoading === `restore-${job.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                                  </button>
+                                )}
+
+                                {/* ⏳ Extend 6-digit Code (+24 Hours) */}
                                 {job.printCode && job.status === 'QUEUED' && (
                                   <button
                                     onClick={() => handleExtendCode(job.printCode!)}
                                     disabled={actionLoading === job.printCode}
                                     className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all active:scale-95 shadow-sm"
-                                    title="Extend Code (+24 Hours)"
+                                    title="Add +24 Hours to Code"
                                   >
                                     <Clock className="w-4 h-4" />
                                   </button>
                                 )}
 
-                                {/* Stop / Cancel Active Job */}
+                                {/* 🚫 Stop / Cancel Active Job */}
                                 {job.status !== 'COMPLETED' && job.status !== 'CANCELLED' && (
                                   <button
                                     onClick={() => handleCancelJob(job.id)}
                                     disabled={actionLoading === job.id}
                                     className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all active:scale-95 shadow-sm"
-                                    title="Stop & Cancel Job"
+                                    title="Stop & Cancel Job (Informs Customer)"
                                   >
                                     {actionLoading === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
                                   </button>
                                 )}
 
-                                {/* Permanent Delete Option */}
+                                {/* 🗑️ Permanent Delete Option */}
                                 <button
                                   onClick={() => handleDeleteJob(job.id, job.displayId)}
                                   disabled={actionLoading === `delete-${job.id}`}
@@ -964,7 +1036,7 @@ export default function AdminDashboardPage() {
         </main>
       </div>
 
-      {/* ── MODAL: INSPECT JOB DETAILS ── */}
+      {/* ── MODAL: INSPECT JOB DETAILS & REAL-TIME CONTROLS ── */}
       <AnimatePresence>
         {selectedJob && (
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
@@ -977,7 +1049,7 @@ export default function AdminDashboardPage() {
               <div className="flex justify-between items-center pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-lg font-black text-slate-900">{selectedJob.displayId}</h3>
-                  <p className="text-xs text-slate-400">Detailed Print Job Telemetry</p>
+                  <p className="text-xs text-slate-400">Detailed Print Job Telemetry & Timing</p>
                 </div>
                 <button
                   onClick={() => setSelectedJob(null)}
@@ -994,23 +1066,48 @@ export default function AdminDashboardPage() {
                 </div>
                 <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-bold">6-Digit Release Code</span>
-                  <span className="text-amber-700 font-mono font-black text-sm">{selectedJob.printCode || 'None'}</span>
+                  <div className="text-right">
+                    <span className="text-amber-700 font-mono font-black text-sm block">{selectedJob.printCode || 'None'}</span>
+                    {selectedJob.status === 'QUEUED' && (
+                      <span className="text-[11px] text-sky-600 font-bold">
+                        {getRemainingCountdown(selectedJob.printCodeExpiresAt)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                  <span className="text-slate-400 font-bold">Total Pages / Copies</span>
-                  <span className="text-slate-900 font-bold">{selectedJob.totalPages} pages ({selectedJob.copies} copy)</span>
+                  <span className="text-slate-400 font-bold">Created Timestamp</span>
+                  <span className="text-slate-900 font-mono font-bold">
+                    {new Date(selectedJob.createdAt).toLocaleString()}
+                  </span>
                 </div>
+                {selectedJob.completedAt && (
+                  <div className="flex justify-between bg-emerald-50 p-3.5 rounded-xl border border-emerald-100">
+                    <span className="text-emerald-700 font-bold">Completed / Printed Timestamp</span>
+                    <span className="text-emerald-950 font-mono font-bold">
+                      {new Date(selectedJob.completedAt).toLocaleString()}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                  <span className="text-slate-400 font-bold">Amount Paid</span>
-                  <span className="text-slate-900 font-black">₹{selectedJob.totalPrice}</span>
-                </div>
-                <div className="flex justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                  <span className="text-slate-400 font-bold">Assigned Kiosk</span>
-                  <span className="text-slate-900 font-bold">{selectedJob.kioskName || 'Any Kiosk Station'}</span>
+                  <span className="text-slate-400 font-bold">Total Pages / Amount</span>
+                  <span className="text-slate-900 font-bold">{selectedJob.totalPages} pages • ₹{selectedJob.totalPrice} ({selectedJob.paymentStatus || 'PAID'})</span>
                 </div>
               </div>
 
               <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* 🔄 Restore / Reactivate Cancelled Job */}
+                {selectedJob.status === 'CANCELLED' && (
+                  <button
+                    onClick={() => handleRestoreJob(selectedJob.id, selectedJob.displayId)}
+                    className="py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-md shadow-emerald-500/20"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Restore Job to Normal</span>
+                  </button>
+                )}
+
+                {/* ⏳ Extend Code (+24h) */}
                 {selectedJob.printCode && selectedJob.status === 'QUEUED' && (
                   <button
                     onClick={() => handleExtendCode(selectedJob.printCode!)}
@@ -1021,16 +1118,18 @@ export default function AdminDashboardPage() {
                   </button>
                 )}
 
+                {/* 🚫 Stop Job */}
                 {selectedJob.status !== 'COMPLETED' && selectedJob.status !== 'CANCELLED' && (
                   <button
                     onClick={() => handleCancelJob(selectedJob.id)}
                     className="py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-md shadow-rose-500/20"
                   >
                     <Ban className="w-3.5 h-3.5" />
-                    <span>Stop Job & Cancel Code</span>
+                    <span>Stop & Cancel Job</span>
                   </button>
                 )}
 
+                {/* 🗑️ Delete Record */}
                 <button
                   onClick={() => handleDeleteJob(selectedJob.id, selectedJob.displayId)}
                   className="py-2.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 rounded-xl font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5"

@@ -215,6 +215,70 @@ router.post('/jobs/:id/cancel', async (req: Request, res: Response) => {
   }
 });
 
+// ── Restore / Reactivate Cancelled Job ──
+router.post('/jobs/:id/restore', async (req: Request, res: Response) => {
+  try {
+    const prisma = req.app.locals.prisma;
+    const io = req.app.locals.io;
+    const { id } = req.params;
+
+    const job = await prisma.printJob.findFirst({
+      where: { OR: [{ id }, { displayId: id }] },
+      include: { printCode: true },
+    });
+
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    // Reactivate job back to QUEUED
+    const updatedJob = await prisma.printJob.update({
+      where: { id: job.id },
+      data: {
+        status: 'QUEUED',
+        errorMessage: null,
+      },
+    });
+
+    // Reactivate code and ensure +24h validity
+    if (job.printCode) {
+      await prisma.printCode.update({
+        where: { id: job.printCode.id },
+        data: {
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+    }
+
+    // Broadcast live restoration
+    if (io) {
+      io.to(`session:${job.sessionId}`).emit('job_update', {
+        type: 'JOB_UPDATE',
+        jobId: job.id,
+        displayId: job.displayId,
+        status: 'QUEUED',
+      });
+      io.emit('job_update', {
+        type: 'JOB_UPDATE',
+        jobId: job.id,
+        displayId: job.displayId,
+        status: 'QUEUED',
+      });
+      io.to('admin').emit('job_updated', {
+        id: job.id,
+        displayId: job.displayId,
+        status: 'QUEUED',
+      });
+    }
+
+    res.json({ success: true, message: `Job ${job.displayId} restored to active queue!`, data: updatedJob });
+  } catch (error) {
+    console.error('Restore job error:', error);
+    res.status(500).json({ success: false, error: 'Failed to restore job' });
+  }
+});
+
 // ── 4. Revoke Print Code ──
 router.post('/codes/:id/revoke', async (req: Request, res: Response) => {
   try {

@@ -381,12 +381,6 @@ function CodeContent() {
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500 font-bold">Total Pages</span>
-                <span className="text-slate-900 font-bold">{jobInfo?.totalPages} pages</span>
-              </div>
-              <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-xs">
-                <span className="text-slate-500 font-bold">Delivery Status</span>
-                <span className="text-emerald-700 font-black flex items-center gap-1">
-                  <Check className="w-4 h-4" /> Printed & Delivered
                 </span>
               </div>
             </div>
