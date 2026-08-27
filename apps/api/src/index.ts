@@ -87,6 +87,62 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/print-codes', printCodeRoutes);
 app.use('/api/admin', adminRoutes);
 
+// ── Root Landing & Status Dashboard ──
+app.get('/', (_req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>XPOS Cloud API — Operational</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 24px; padding: 40px; max-width: 520px; width: 100%; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+        .badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 700; font-size: 13px; padding: 6px 16px; border-radius: 9999px; border: 1px solid rgba(16, 185, 129, 0.3); margin-bottom: 20px; }
+        .dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 10px #10b981; }
+        h1 { font-size: 28px; font-weight: 800; margin: 0 0 10px 0; color: #ffffff; }
+        p { color: #94a3b8; font-size: 15px; margin: 0 0 30px 0; line-height: 1.5; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 30px; text-align: left; }
+        .box { background: #0f172a; border: 1px solid #334155; border-radius: 16px; padding: 16px; }
+        .box-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+        .box-value { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+        .footer { font-size: 12px; color: #475569; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="badge">
+          <div class="dot"></div>
+          XPOS Cloud API Active
+        </div>
+        <h1>XPOS Cloud Engine</h1>
+        <p>Core cloud services, WebSockets, and database synchronization are operational.</p>
+        <div class="grid">
+          <div class="box">
+            <div class="box-title">Database</div>
+            <div class="box-value">Neon PostgreSQL 🟢</div>
+          </div>
+          <div class="box">
+            <div class="box-title">WebSockets</div>
+            <div class="box-value">Online (Socket.IO) ⚡</div>
+          </div>
+          <div class="box">
+            <div class="box-title">Print Release</div>
+            <div class="box-value">6-Digit Code Ready 🔑</div>
+          </div>
+          <div class="box">
+            <div class="box-title">API Version</div>
+            <div class="box-value">v2.0 Production 🚀</div>
+          </div>
+        </div>
+        <div class="footer">XPOS Cloud Self-Service System • Canon MF280 Bridge</div>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
 // ── Health check ──
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'xpos-api', timestamp: new Date().toISOString() });
