@@ -27,27 +27,39 @@ import { getRandomCharmingLine, getRandomCompletionLine } from '../lib/charming-
 import { playKeySound } from '../lib/sound';
 
 function getApiUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     if (hostname.includes('loca.lt')) {
       return 'https://xpos-api-cloud.loca.lt';
     }
+    if (hostname.includes('vercel.app') || hostname.includes('render.com')) {
+      return 'https://xpos-printing-cloud.onrender.com';
+    }
     return `http://${hostname}:4000`;
   }
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  return 'http://localhost:4000';
 }
 
 function getAppUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL;
+  }
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     if (hostname.includes('loca.lt')) {
       return 'https://xpos-print-customer.loca.lt';
     }
+    if (hostname.includes('vercel.app') || hostname.includes('render.com')) {
+      return `https://${hostname}`;
+    }
     if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
       return `http://${hostname}:3000`;
     }
   }
-  return process.env.NEXT_PUBLIC_APP_URL || 'http://192.168.1.10:3000';
+  return 'http://localhost:3000';
 }
 
 const KIOSK_ID = process.env.NEXT_PUBLIC_KIOSK_ID || 'XPOS-001';

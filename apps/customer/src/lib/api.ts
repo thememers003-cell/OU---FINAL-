@@ -3,14 +3,20 @@
 // ============================================================
 
 export function getApiUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     if (hostname.includes('loca.lt')) {
       return 'https://xpos-api-cloud.loca.lt';
     }
+    if (hostname.includes('vercel.app') || hostname.includes('render.com')) {
+      return 'https://xpos-printing-cloud.onrender.com';
+    }
     return `http://${hostname}:4000`;
   }
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  return 'http://localhost:4000';
 }
 
 async function apiRequest<T>(

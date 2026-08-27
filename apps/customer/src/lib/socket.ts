@@ -3,14 +3,13 @@
 // ============================================================
 
 import { io, Socket } from 'socket.io-client';
-
-const WS_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+import { getApiUrl } from './api';
 
 let socket: Socket | null = null;
 
 export function getSocket(): Socket {
   if (!socket) {
-    socket = io(WS_URL, {
+    socket = io(getApiUrl(), {
       transports: ['websocket', 'polling'],
       autoConnect: false,
     });
