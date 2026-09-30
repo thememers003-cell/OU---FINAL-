@@ -384,17 +384,7 @@ export default function KioskApp() {
       {/* ════════════════════════════════════════════════ */}
       <header className="flex items-center justify-between relative z-10">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/25 flex-shrink-0">
-            <Printer className="w-7 h-7 md:w-8 md:h-8" />
-          </div>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight text-slate-900 leading-none">
-              XPOS
-            </h1>
-            <span className="text-[10px] md:text-xs font-black tracking-widest text-blue-600 uppercase bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-100 mt-1 inline-block">
-              PRINT ON SCREEN
-            </span>
-          </div>
+          <img src="/printbro_logo.png" alt="PrintBro" className="h-12 md:h-14 object-contain" />
         </div>
 
         {/* Station & Status Badge */}
@@ -433,7 +423,7 @@ export default function KioskApp() {
                   ⚡ Self-Service Print Station
                 </span>
                 <h2 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight">
-                  Welcome to XPOS
+                  Welcome to Print Bro
                 </h2>
                 <p className="text-slate-600 font-medium text-base md:text-lg max-w-lg mx-auto">
                   Have a 6-digit release code from your phone? Enter it below to print instantly.
@@ -854,14 +844,14 @@ export default function KioskApp() {
       {/* ════════════════════════════════════════════════ */}
       <footer className="flex items-center justify-between text-xs font-bold text-slate-500 relative z-10 pt-4 border-t border-slate-200">
         <div className="flex items-center gap-2">
-          <span>XPOS Cloud v2.0</span>
+          <span>Print Bro Cloud v2.0</span>
           <span>•</span>
           <span className="text-emerald-700 font-bold flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             Printer {printerStatus}
           </span>
         </div>
-        <p className="text-slate-400">Powered by XPOS Self-Service</p>
+        <p className="text-slate-400">Powered by Print Bro Self-Service</p>
       </footer>
     </div>
   );

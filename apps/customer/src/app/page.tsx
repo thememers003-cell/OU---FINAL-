@@ -126,18 +126,7 @@ export default function XPOSShowcaseLandingPage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* Brand Logo */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push('/')}>
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/25 text-white">
-              <Printer className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-black text-xl text-slate-900 tracking-tight">XPOS</span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-sky-100 text-sky-700 rounded-md border border-sky-200">
-                  Cloud Print
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 font-bold leading-none">Instant Physical Release</p>
-            </div>
+            <img src="/printbro_logo.png" alt="PrintBro" className="h-10 md:h-12 object-contain" />
           </div>
 
           {/* Quick Nav Links (Desktop) */}
@@ -200,7 +189,7 @@ export default function XPOSShowcaseLandingPage() {
             </h1>
 
             <p className="text-base sm:text-lg text-slate-600 font-medium max-w-xl mx-auto lg:mx-0 leading-relaxed">
-              No app downloads. No printer drivers. Upload any PDF, Word, or photo from your phone, get a 6-digit code, and collect your crisp prints in <strong>0.4 seconds</strong> at any XPOS station.
+              No app downloads. No printer drivers. Upload any PDF, Word, or photo from your phone, get a 6-digit code, and collect your crisp prints in <strong>under 45 seconds</strong> at any Print Bro station.
             </p>
 
             {/* Primary Action Buttons */}
@@ -269,7 +258,7 @@ export default function XPOSShowcaseLandingPage() {
                     XP
                   </div>
                   <div>
-                    <h3 className="font-black text-sm text-slate-900">XPOS TOUCH KIOSK</h3>
+                    <h3 className="font-black text-sm text-slate-900">PRINT BRO TOUCH KIOSK</h3>
                     <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" /> Laser Engine Ready
                     </span>
@@ -369,7 +358,7 @@ export default function XPOSShowcaseLandingPage() {
               The 5-Step Mechanical Journey
             </span>
             <h2 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight">
-              How XPOS Cloud Printing Works
+              How Print Bro Cloud Printing Works
             </h2>
             <p className="text-slate-500 font-medium text-sm md:text-base">
               From phone upload to physical warm paper in your hands in less than a minute.
@@ -385,7 +374,7 @@ export default function XPOSShowcaseLandingPage() {
               </div>
               <h3 className="text-xl font-black text-slate-900">Upload Any Document</h3>
               <p className="text-slate-600 text-xs leading-relaxed">
-                Open XPOS on your mobile phone or laptop. Upload PDF, Word DOCX, or images with automated page counting and duplex options.
+                Open Print Bro on your mobile phone or laptop. Upload PDF, Word DOCX, or images with automated page counting and duplex options.
               </p>
               <div className="p-3 bg-white rounded-2xl border border-slate-200 flex items-center gap-2 text-xs font-bold text-slate-700">
                 <Smartphone className="w-4 h-4 text-sky-500" />
@@ -415,7 +404,7 @@ export default function XPOSShowcaseLandingPage() {
               </div>
               <h3 className="text-xl font-black text-slate-900">Walk to Any Kiosk</h3>
               <p className="text-slate-600 text-xs leading-relaxed">
-                Visit any XPOS kiosk on campus, in your library, or store lobby. No Bluetooth pairing or WiFi network configuration needed.
+                Visit any Print Bro kiosk on campus, in your library, or store lobby. No Bluetooth pairing or WiFi network configuration needed.
               </p>
               <div className="p-3 bg-white rounded-2xl border border-slate-200 flex items-center gap-2 text-xs font-bold text-slate-700">
                 <Radio className="w-4 h-4 text-indigo-500" />
@@ -672,7 +661,7 @@ export default function XPOSShowcaseLandingPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 border-t border-slate-800/80 pt-8">
             <div className="flex items-center gap-2">
               <Printer className="w-4 h-4 text-sky-400" />
-              <span className="font-bold text-slate-300">XPOS Cloud Printing Ecosystem</span>
+              <span className="font-bold text-slate-300">Print Bro Cloud Printing Ecosystem</span>
             </div>
             <div>
               Powered by Neon Cloud PostgreSQL & Render Node.js WebSockets

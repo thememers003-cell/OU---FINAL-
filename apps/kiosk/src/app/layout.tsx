@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'XPOS Kiosk — Print On Screen',
-  description: 'XPOS Self-Service Printing Kiosk',
+  title: 'Print Bro Kiosk — Scan. Pay. Print.',
+  description: 'Print Bro Self-Service Printing Kiosk',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

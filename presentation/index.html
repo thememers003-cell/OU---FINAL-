@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Print Bro — CIE Pitch Deck | Smart Campus Printing Kiosks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* Default: Crisp, High-Contrast Light Theme (Optimized for Readability & Projectors) */
+    :root {
+      --bg: #f1f5f9;
+      --card-bg: #ffffff;
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+      --card-hover-border: #0284c7;
+      --primary: #0284c7;
+      --primary-gradient: linear-gradient(135deg, #0284c7 0%, #4338ca 100%);
+      --accent: #4338ca;
+      --success: #059669;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --text: #0f172a;           /* Deep Slate 900 - Sharp, Jet Black Legibility */
+      --text-body: #1e293b;      /* Slate 800 - Highly Legible Content */
+      --text-muted: #475569;     /* Slate 600 - High Contrast Subtitles */
+      --callout-bg: #f8fafc;
+      --table-header-bg: #1e3a8a;
+      --table-row-alt: #f8fafc;
+      --font-display: 'Outfit', sans-serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    [data-theme="dark"] {
+      --bg: #090d16;
+      --card-bg: rgba(22, 30, 49, 0.9);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --card-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      --card-hover-border: #38bdf8;
+      --primary: #38bdf8;
+      --primary-gradient: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+      --accent: #818cf8;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --text: #f8fafc;
+      --text-body: #e2e8f0;
+      --text-muted: #94a3b8;
+      --callout-bg: rgba(15, 23, 42, 0.8);
+      --table-header-bg: #1e293b;
+      --table-row-alt: rgba(30, 41, 59, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-body);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    /* Ambient background glows */
+    .glow-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(140px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+    }
+    .orb-1 { width: 500px; height: 500px; background: #38bdf8; top: -100px; left: -100px; }
+    .orb-2 { width: 600px; height: 600px; background: #818cf8; bottom: -150px; right: -150px; }
+
+    /* Top presentation control bar */
+    header {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 28px;
+      border-bottom: 2px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      background: var(--card-bg);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: var(--primary-gradient);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: white;
+      font-size: 17px;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+    }
+    .brand-text {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 21px;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    .brand-tag {
+      font-size: 12px;
+      padding: 3px 10px;
+      background: rgba(2, 132, 199, 0.1);
+      border: 1px solid rgba(2, 132, 199, 0.3);
+      border-radius: 20px;
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .ctrl-btn {
+      background: var(--bg);
+      border: 1.5px solid var(--card-border);
+      color: var(--text);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ctrl-btn:hover {
+      background: var(--card-bg);
+      border-color: var(--primary);
+      color: var(--primary);
+      transform: translateY(-1px);
+    }
+    .timer-badge {
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: 700;
+      color: #b45309;
+      padding: 5px 10px;
+      background: #fef3c7;
+      border-radius: 6px;
+      border: 1px solid #fde68a;
+    }
+    [data-theme="dark"] .timer-badge {
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.1);
+      border-color: rgba(251, 191, 36, 0.3);
+    }
+    .slide-counter {
+      font-weight: 800;
+      font-size: 15px;
+      color: var(--primary);
+      min-width: 65px;
+      text-align: center;
+    }
+
+    /* Main Slides Container */
+    main {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 5;
+    }
+
+    .deck-container {
+      width: 100%;
+      max-width: 1300px;
+      height: 100%;
+      max-height: 760px;
+      position: relative;
+      perspective: 1000px;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      border-radius: 20px;
+      box-shadow: var(--card-shadow);
+      padding: 40px 48px;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(20px) scale(0.98);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0) scale(1);
+    }
+
+    /* Slide Header */
+    .slide-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+    .slide-title {
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      line-height: 1.2;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .slide-subtitle {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 22px;
+    }
+
+    /* Card Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      flex: 1;
+      min-height: 0;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+    .grid-5 {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1.5px solid var(--card-border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    .card:hover {
+      border-color: var(--card-hover-border);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+    }
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 14.5px;
+      font-weight: 500;
+      line-height: 1.55;
+      color: var(--text-body);
+    }
+    .bullet-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .bullet-list li strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .bullet-list li::before {
+      content: "•";
+      color: var(--primary);
+      font-weight: 800;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .bullet-list.danger li::before { color: var(--danger); }
+    .bullet-list.success li::before { color: var(--success); }
+
+    /* Journey Flow Box */
+    .flow-container {
+      background: var(--bg);
+      border: 2px solid var(--primary);
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      overflow-x: auto;
+      gap: 12px;
+    }
+    .flow-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      font-weight: 700;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .flow-arrow {
+      color: var(--primary);
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .flow-step.friction {
+      color: var(--danger);
+    }
+    .flow-step.success {
+      color: var(--success);
+    }
+
+    /* Comparison Table */
+    .styled-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid var(--card-border);
+      font-size: 14px;
+      flex: 1;
+    }
+    .styled-table th {
+      background: var(--table-header-bg);
+      padding: 12px 18px;
+      text-align: left;
+      font-weight: 800;
+      font-family: var(--font-display);
+      color: #ffffff;
+      border-bottom: 2px solid var(--card-border);
+      letter-spacing: 0.3px;
+    }
+    .styled-table td {
+      padding: 11px 18px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      color: var(--text-body);
+      font-weight: 600;
+    }
+    .styled-table tr:nth-child(even) td {
+      background: var(--table-row-alt);
+    }
+    .styled-table tr:last-child td {
+      border-bottom: none;
+    }
+    .styled-table td:first-child {
+      font-weight: 700;
+      color: var(--accent);
+      width: 32%;
+    }
+
+    /* Callout Banner */
+    .callout-box {
+      background: var(--callout-bg);
+      border: 2px solid var(--primary);
+      border-radius: 12px;
+      padding: 14px 20px;
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .callout-box strong {
+      color: var(--primary);
+      font-weight: 800;
+    }
+
+    /* Step Cards (1 to 5) */
+    .step-card {
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px 14px;
+      display: flex;
+      flex-direction: column;
+      text-align: center;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    .step-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-4px);
+      box-shadow: 0 10px 20px -3px rgba(2, 132, 199, 0.15);
+    }
+    .step-num {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(2, 132, 199, 0.12);
+      border: 2px solid var(--primary);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+      margin: 0 auto 12px auto;
+    }
+    .step-name {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .step-desc {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-body);
+      line-height: 1.5;
+    }
+
+    /* Footer Navigation */
+    footer {
+      position: relative;
+      z-index: 10;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 2px solid var(--card-border);
+      background: var(--card-bg);
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.03);
+    }
+    .nav-hints {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      gap: 16px;
+    }
+    .nav-hints kbd {
+      background: var(--bg);
+      padding: 3px 7px;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      font-family: inherit;
+      font-weight: 700;
+    }
+    .nav-btns {
+      display: flex;
+      gap: 10px;
+    }
+    .nav-btn {
+      background: var(--bg);
+      border: 1.5px solid var(--card-border);
+      color: var(--text);
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .nav-btn.primary {
+      background: var(--primary-gradient);
+      border: none;
+      color: white;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
+    }
+    .nav-btn:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    /* Speaker Notes Modal */
+    .speaker-notes-drawer {
+      position: fixed;
+      bottom: 64px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120%);
+      width: 90%;
+      max-width: 800px;
+      background: var(--card-bg);
+      border: 2px solid var(--primary);
+      border-radius: 14px;
+      padding: 18px 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      z-index: 100;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .speaker-notes-drawer.open {
+      transform: translateX(-50%) translateY(0);
+    }
+    .notes-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .notes-content {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* Grid Overview Modal */
+    .grid-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(12px);
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      padding: 30px;
+      overflow-y: auto;
+    }
+    .grid-modal.open {
+      display: flex;
+    }
+    .grid-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+    }
+    .thumb-card {
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      border-radius: 12px;
+      padding: 18px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    .thumb-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-3px);
+    }
+    .thumb-num {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+    .thumb-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Print Stylesheet */
+    @media print {
+      body {
+        overflow: visible;
+        background: white !important;
+        color: #0f172a !important;
+      }
+      header, footer, .glow-orb, .controls, .nav-hints, .speaker-notes-drawer, .grid-modal {
+        display: none !important;
+      }
+      main {
+        padding: 0;
+        display: block;
+      }
+      .deck-container {
+        max-width: none;
+        max-height: none;
+        position: static;
+      }
+      .slide {
+        position: relative !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        transform: none !important;
+        page-break-after: always;
+        height: 100vh;
+        border: none;
+        background: white !important;
+        color: #0f172a !important;
+        box-shadow: none;
+        padding: 40px;
+      }
+      .slide-title { color: #0f172a !important; }
+      .card { background: #ffffff !important; border: 1.5px solid #cbd5e1 !important; }
+      .bullet-list { color: #1e293b !important; }
+      .styled-table th { background: #1e3a8a !important; color: #ffffff !important; }
+      .styled-table td { background: #ffffff !important; color: #1e293b !important; }
+    }
+  </style>
+</head>
+<body data-theme="light">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <img src="printbro_logo.png" alt="PrintBro" style="height: 44px; object-fit: contain;" />
+      <div class="brand-tag">CIE Pitch Presentation</div>
+    </div>
+    <div class="controls">
+      <div class="timer-badge" id="pitchTimer">00:00</div>
+      <button class="ctrl-btn" id="themeToggleBtn" title="Toggle Light/Dark Theme">☀️ Theme</button>
+      <button class="ctrl-btn" id="timerToggleBtn" title="Start/Pause Timer">⏱️ Timer</button>
+      <button class="ctrl-btn" id="notesBtn" title="Toggle Speaker Notes [S]">📝 Notes</button>
+      <button class="ctrl-btn" id="gridBtn" title="Slide Overview [O]">🔲 Overview</button>
+      <button class="ctrl-btn" id="fullscreenBtn" title="Toggle Fullscreen [F]">⛶ Fullscreen</button>
+      <div class="slide-counter" id="slideCounter">01 / 12</div>
+    </div>
+  </header>
+
+  <!-- Slide Deck -->
+  <main>
+    <div class="deck-container">
+
+      <!-- SLIDE 1: Title & The Problem -->
+      <section class="slide active" data-slide="1" data-notes="Welcome CIE Faculty. Introduce Print Bro. Set the scene: Every student in college deals with printing constantly for assignments, lab records, resumes, and project reports. Yet, the entire campus relies on 1 or 2 congested Xerox shops where 6 manual steps are required for a simple 2-page print.">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;">
+          <div>
+            <div class="slide-badge">Slide 01 • Problem Statement</div>
+            <h1 class="slide-title">The Problem with Traditional Campus Printing</h1>
+            <p class="slide-subtitle">College students frequently need to print assignments, records, resumes, notes, project reports, and certificates.</p>
+          </div>
+          <img src="printbro_logo.png" alt="PrintBro Logo" style="height: 68px; object-fit: contain; margin-left: 20px; flex-shrink: 0;" />
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--accent);"><span class="icon">🏢</span> Traditional Campus Xerox Dependency</div>
+            <ul class="bullet-list">
+              <li><strong>Small Number of Shops:</strong> Most students depend on just 1 or 2 Xerox / printing shops around campus.</li>
+              <li><strong>Multi-Service Burden:</strong> These shops are not only handling printing — they also provide stationery, scanning, binding, lamination, and other services.</li>
+              <li><strong>Peak-Hour Crowds:</strong> During peak hours, this creates large crowds and long waiting times.</li>
+              <li><strong>Queue Waste:</strong> Students often have to wait in queues just to print a few pages.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--danger);"><span class="icon">⚙️</span> The 6-Step Manual Operator Process</div>
+            <p style="font-size: 13.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px;">The shop operator has to manually perform every step:</p>
+            <ul class="bullet-list danger">
+              <li><strong>1. Receive the file</strong> (via WhatsApp, USB, or Bluetooth)</li>
+              <li><strong>2. Open and inspect</strong> the document on their computer</li>
+              <li><strong>3. Manually select printing settings</strong> (B/W, color, pages, copies)</li>
+              <li><strong>4. Take payment</strong> (cash change or manual UPI checking)</li>
+              <li><strong>5. Print the document</strong> on local printers</li>
+              <li><strong>6. Collate and hand it over</strong> to the student</li>
+            </ul>
+            <div style="margin-top: 10px; font-size: 13px; font-weight: 700; color: var(--danger);">
+              For simple printing jobs, this manual process takes several minutes per student.
+            </div>
+          </div>
+        </div>
+
+        <div class="callout-box">
+          <span style="font-size: 20px;">⚠️</span>
+          <div><strong>Key Issue:</strong> A simple printing requirement becomes a time-consuming process because students and multiple services are concentrated at one physical counter.</div>
+        </div>
+      </section>
+
+      <!-- SLIDE 2: What Students Experience -->
+      <section class="slide" data-slide="2" data-notes="Walk the faculty through the student's journey. Emphasize that students literally lose class time or receive lab late penalties simply because they are waiting in a Xerox shop line. Also note the privacy and virus risks of WhatsApp file transfers.">
+        <div class="slide-badge">Slide 02 • User Experience</div>
+        <h1 class="slide-title">The Current Student Experience</h1>
+        <p class="slide-subtitle">Tracing every step and frustration point in the traditional campus printing journey</p>
+
+        <div class="flow-container">
+          <div class="flow-step">Student needs print</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step friction">Goes to Xerox shop</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step friction">Finds crowd</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step friction">Waits in queue</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step friction">Shares file</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">Payment</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">Printing</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step success">Collects pages</div>
+        </div>
+
+        <div class="grid-3">
+          <div class="card" style="border-top: 4px solid var(--danger);">
+            <div class="card-title" style="color: var(--danger);"><span class="icon">🔴</span> Time & Crowding</div>
+            <ul class="bullet-list danger">
+              <li><strong>Long queues:</strong> 15 to 45 minutes wasted before classes</li>
+              <li><strong>Waiting time:</strong> Lost study hours and late submissions</li>
+              <li><strong>Peak-hour crowding:</strong> Heavy congestion outside shops</li>
+            </ul>
+          </div>
+
+          <div class="card" style="border-top: 4px solid var(--warning);">
+            <div class="card-title" style="color: var(--warning);"><span class="icon">🔴</span> Manual Process</div>
+            <ul class="bullet-list">
+              <li><strong>Manual handling:</strong> Operator must open every file</li>
+              <li><strong>WhatsApp sharing:</strong> Awkward privacy & clutter issues</li>
+              <li><strong>USB transfers:</strong> Risks spreading computer viruses</li>
+            </ul>
+          </div>
+
+          <div class="card" style="border-top: 4px solid var(--primary);">
+            <div class="card-title" style="color: var(--primary);"><span class="icon">🔴</span> Access & Dependency</div>
+            <ul class="bullet-list">
+              <li><strong>Limited printing locations:</strong> Entire campus depends on 1 spot</li>
+              <li><strong>Shop dependency:</strong> If shop closes or operator is away, everything stops</li>
+              <li><strong>Strict hours:</strong> Zero late-night printing for hostelers</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 3: The Bigger Problem -->
+      <section class="slide" data-slide="3" data-notes="Show the faculty that this is an institutional efficiency problem. 90% of student time is deadweight queue time. When compounded across 4,000 students at GPREC, thousands of academic hours are wasted every semester.">
+        <div class="slide-badge">Slide 03 • Deep Problem Analysis</div>
+        <h1 class="slide-title">More Than Just a Printing Problem</h1>
+        <p class="slide-subtitle">The issue isn't simply the cost of printing. It is about Time + Accessibility + Operational Efficiency.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--accent);"><span class="icon">⏱️</span> The Disproportionate Time Equation</div>
+            <p style="font-size: 14.5px; font-weight: 600; color: var(--text-body); margin-bottom: 12px;">A student who needs only 5–10 pages may spend significantly more time:</p>
+            <ul class="bullet-list">
+              <li><strong>Travelling to the shop:</strong> 10 to 15 minutes walk</li>
+              <li><strong>Waiting in the queue:</strong> 20 to 30 minutes standing in line</li>
+              <li><strong>Completing the transaction:</strong> 3 to 5 minutes manual billing</li>
+              <li><strong style="color: var(--success);">Actual printing time:</strong> <span style="color: var(--success); font-weight: 800; font-size: 16px;">Only 15–20 seconds!</span></li>
+            </ul>
+            <div style="margin-top: 14px; padding: 12px 14px; background: #fee2e2; border-left: 4px solid var(--danger); font-size: 13.5px; font-weight: 700; color: var(--danger); border-radius: 4px;">
+              Over 90% of student time is pure deadweight waiting and logistics!
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--danger);"><span class="icon">🚨</span> High-Stakes Deadline Chaos</div>
+            <p style="font-size: 14.5px; font-weight: 600; color: var(--text-body); margin-bottom: 12px;">This becomes especially problematic during crucial academic windows:</p>
+            <ul class="bullet-list danger">
+              <li><strong>Before exams:</strong> Hall tickets, formula sheets, notes</li>
+              <li><strong>During assignment submissions:</strong> Batch-wise deadlines</li>
+              <li><strong>During project reviews:</strong> Major & minor project reports</li>
+              <li><strong>During record submissions:</strong> Lab certificates & observation sheets</li>
+              <li><strong>During placement / application periods:</strong> Resumes & credentials</li>
+              <li><strong>During college events:</strong> Delegate sheets & event passes</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 4: Limitations of Traditional Model -->
+      <section class="slide" data-slide="4" data-notes="Highlight the structural flaws of the existing model. It was designed decades ago around the shopkeeper, not the modern digital student who carries a smartphone with UPI.">
+        <div class="slide-badge">Slide 04 • Limitations of Traditional Model</div>
+        <h1 class="slide-title">Why Existing Xerox Shops Struggle</h1>
+        <p class="slide-subtitle">A structural mismatch between the traditional counter model and modern campus student needs</p>
+
+        <table class="styled-table">
+          <thead>
+            <tr>
+              <th style="width: 35%;">Traditional Xerox Shop</th>
+              <th>Operational Bottleneck / Problem</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Single counter</td>
+              <td>Creates long queues and severe physical congestion.</td>
+            </tr>
+            <tr>
+              <td>Manual file handling</td>
+              <td>Takes significant operator time for every single student.</td>
+            </tr>
+            <tr>
+              <td>Multiple services</td>
+              <td>Quick printing gets mixed with binding, scanning, and stationery orders.</td>
+            </tr>
+            <tr>
+              <td>Limited working hours</td>
+              <td>Students cannot print anytime (closed early morning and late night).</td>
+            </tr>
+            <tr>
+              <td>Physical presence required</td>
+              <td>Student must physically stand at the counter to hold their place in line.</td>
+            </tr>
+            <tr>
+              <td>High peak-hour demand</td>
+              <td>Crowding increases sharply before 9 AM and laboratory deadlines.</td>
+            </tr>
+            <tr>
+              <td>Operator-dependent</td>
+              <td>Every order requires manual intervention to execute.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout-box">
+          <span style="font-size: 20px;">💡</span>
+          <div><strong>Core Observation:</strong> The existing model is designed around the shop, rather than around the student's convenience.</div>
+        </div>
+      </section>
+
+      <!-- SLIDE 5: The Opportunity -->
+      <section class="slide" data-slide="5" data-notes="Here is the pivot slide. Ask the faculty: What if printing was completely self-service? Just like an ATM eliminated banking queues, self-service kiosks eliminate campus Xerox lines.">
+        <div class="slide-badge">Slide 05 • The Solution Opportunity</div>
+        <h1 class="slide-title">Our Opportunity: What If Printing Was Self-Service?</h1>
+        <p class="slide-subtitle">Imagine a student walking up to a kiosk: Upload Document → Select Pages → Choose B/W or Colour → Pay → Print → Collect</p>
+
+        <div class="grid-2">
+          <div class="card" style="border: 2px solid var(--danger);">
+            <div class="card-title" style="color: var(--danger);"><span class="icon">❌</span> No More</div>
+            <ul class="bullet-list danger">
+              <li><strong>Waiting for an operator:</strong> Eliminates human delays</li>
+              <li><strong>Standing in a long queue:</strong> Zero counter crowding</li>
+              <li><strong>Sharing files through WhatsApp repeatedly:</strong> Complete privacy</li>
+              <li><strong>Manual order processing:</strong> Automated configuration</li>
+              <li><strong>Mixing with binding/stationery orders:</strong> Fast express output</li>
+            </ul>
+          </div>
+
+          <div class="card" style="border: 2px solid var(--success);">
+            <div class="card-title" style="color: var(--success);"><span class="icon">✅</span> Instead: The Print Bro Experience</div>
+            <ul class="bullet-list success">
+              <li><strong>Self-service:</strong> Student controls everything directly from phone or touch screen</li>
+              <li><strong>Fast:</strong> Entire transaction finished in under 45 seconds</li>
+              <li><strong>Digital payment:</strong> Seamless UPI (PhonePe, Google Pay, Paytm)</li>
+              <li><strong>Automated printing:</strong> Cloud-orchestrated high-speed laser hardware</li>
+              <li><strong>Available inside campus:</strong> Deployed in departments, libraries, and hostels</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 6: Introducing Print Bro -->
+      <section class="slide" data-slide="6" data-notes="Present the core product: Print Bro. Explain the 5 simple steps. The user scans a QR or uses the touchscreen, uploads their PDF, configures pages, pays through dynamic UPI, and high-speed laser hardware auto-prints in seconds.">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;">
+          <div>
+            <div class="slide-badge">Slide 06 • Introducing Print Bro</div>
+            <h1 class="slide-title">Introducing Print Bro: Smart Campus Printing Kiosk</h1>
+            <p class="slide-subtitle">Print Bro is a self-service printing kiosk designed specifically for colleges, schools, and institutional campuses.</p>
+          </div>
+          <img src="printbro_logo.png" alt="PrintBro Logo" style="height: 65px; object-fit: contain; margin-left: 20px; flex-shrink: 0;" />
+        </div>
+
+        <div class="grid-5" style="margin-top: 10px;">
+          <div class="step-card">
+            <div class="step-num">1</div>
+            <div class="step-name">1. Upload</div>
+            <div class="step-desc">Upload PDF / document through QR scan on phone or direct kiosk interface.</div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">2</div>
+            <div class="step-name">2. Configure</div>
+            <div class="step-desc">Select exact pages, number of copies, B/W or colour, duplex or single-sided.</div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">3</div>
+            <div class="step-name">3. Pay</div>
+            <div class="step-desc">Pay digitally using UPI (Google Pay, PhonePe, Paytm) via dynamic QR code.</div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">4</div>
+            <div class="step-name">4. Print</div>
+            <div class="step-desc">Automated high-speed cloud printing starts immediately.</div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">5</div>
+            <div class="step-name">5. Collect</div>
+            <div class="step-desc">Student receives the crisp, neatly sorted printed document from the tray.</div>
+          </div>
+        </div>
+
+        <div class="callout-box" style="margin-top: 24px;">
+          <span style="font-size: 20px;">🎯</span>
+          <div><strong>Goal:</strong> Turn a traditional counter-based printing experience into a self-service digital experience.</div>
+        </div>
+      </section>
+
+      <!-- SLIDE 7: Reducing Crowding -->
+      <section class="slide" data-slide="7" data-notes="Explain the distributed network effect. Instead of 100 students funneling into one shop, Print Bro deploys kiosks across departments, libraries, and hostels. Demand is distributed and queues vanish.">
+        <div class="slide-badge">Slide 07 • Architecture & Scaling</div>
+        <h1 class="slide-title">Why This Can Reduce Crowding</h1>
+        <p class="slide-subtitle">From One Counter → Multiple Self-Service Points across the campus</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--accent);"><span class="icon">📊</span> The Fundamental Difference</div>
+            <div style="background: #fee2e2; border: 1.5px solid var(--danger); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+              <div style="font-size: 12px; color: var(--danger); font-weight: 800; margin-bottom: 4px;">TRADITIONAL MODEL:</div>
+              <div style="font-size: 14px; font-weight: 700; color: #991b1b;">100 students → 1 shop counter → 1 operator → Massive Queue</div>
+            </div>
+            <div style="background: #dcfce7; border: 1.5px solid var(--success); border-radius: 8px; padding: 14px;">
+              <div style="font-size: 12px; color: var(--success); font-weight: 800; margin-bottom: 4px;">PRINT BRO MODEL:</div>
+              <div style="font-size: 14px; font-weight: 700; color: #166534;">100 students → Self-service kiosks → Automated processing → Zero Congestion</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--success);"><span class="icon">📍</span> Distributed Campus Deployment Locations</div>
+            <ul class="bullet-list success">
+              <li><strong>College Academic Blocks:</strong> Instant prints right outside classrooms</li>
+              <li><strong>Central Library:</strong> Research papers, notes, study material</li>
+              <li><strong>Hostels (Boys & Girls):</strong> 24/7 night access for exam preparation</li>
+              <li><strong>Administrative Buildings:</strong> Official forms, hall tickets, slips</li>
+              <li><strong>Canteen & Student Recreation Areas:</strong> High footfall convenience</li>
+              <li><strong>Academic Laboratory Departments:</strong> Lab records & reports</li>
+            </ul>
+            <div style="margin-top: 12px; font-size: 13.5px; font-weight: 700; color: var(--primary);">
+              This creates a distributed printing network instead of concentrating demand at one shop.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 8: Additional Opportunity -->
+      <section class="slide" data-slide="8" data-notes="This is the CIE favorite! Point out to the faculty that Print Bro is not just a hardware box; it's a high-value digital advertising platform (DOOH) reaching verified 18-24 college students with 100% captive attention during dwell time.">
+        <div class="slide-badge">Slide 08 • Innovation & Synergies</div>
+        <h1 class="slide-title">Additional Opportunity: Printing + Digital Advertising</h1>
+        <p class="slide-subtitle">This is where your idea becomes more interesting for CIE: Captive Attention + Multi-Sided Monetization</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--accent);"><span class="icon">📺</span> Display Screen & Captive Student Attention</div>
+            <p style="font-size: 14px; font-weight: 600; color: var(--text-body); margin-bottom: 10px;">The kiosk has a dedicated high-definition display screen:</p>
+            <ul class="bullet-list">
+              <li>While students are using the kiosk or waiting for their print:</li>
+              <li><strong>Screen → Campus & Brand Advertisements</strong></li>
+            </ul>
+            <p style="font-size: 14px; font-weight: 700; color: var(--text); margin: 12px 0 6px 0;">Potential Advertisers:</p>
+            <ul class="bullet-list">
+              <li>Food & Beverage brands, cafes, delivery apps</li>
+              <li>EdTech & Skill companies (GATE, Coding, GRE)</li>
+              <li>Banks / Fintech (Student accounts, cards)</li>
+              <li>Local businesses & student products</li>
+              <li>College clubs, cultural fests, and hackathons</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--success);"><span class="icon">🤝</span> Three-Sided Value Ecosystem</div>
+            <p style="font-size: 14px; font-weight: 600; color: var(--text-body); margin-bottom: 12px;">So the model isn't only: <em>Student → Pays → Print</em></p>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="padding: 10px 14px; background: #e0f2fe; border-left: 4px solid var(--primary); border-radius: 4px;">
+                <strong style="color: var(--primary);">1. Student:</strong> Fast, convenient, and subsidized printing service.
+              </div>
+              <div style="padding: 10px 14px; background: #ede9fe; border-left: 4px solid var(--accent); border-radius: 4px;">
+                <strong style="color: var(--accent);">2. Brand:</strong> High-impact, verified advertising to 18-24 college students.
+              </div>
+              <div style="padding: 10px 14px; background: #dcfce7; border-left: 4px solid var(--success); border-radius: 4px;">
+                <strong style="color: var(--success);">3. College:</strong> Modern smart campus infrastructure at zero capital strain.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 9: Business Model -->
+      <section class="slide" data-slide="9" data-notes="Detail the 3 revenue streams for CIE faculty. 1: Core print margin per page. 2: Ad screen slot fees (DOOH). 3: Institutional SaaS subscription for campus administration and departmental quota tracking.">
+        <div class="slide-badge">Slide 09 • Business Model</div>
+        <h1 class="slide-title">Business Model: How Print Bro Can Generate Revenue</h1>
+        <p class="slide-subtitle">Three scalable, complementary revenue streams creating sustainable venture economics</p>
+
+        <div class="grid-3">
+          <div class="card" style="border-top: 4px solid var(--primary);">
+            <div class="card-title" style="color: var(--primary);"><span class="icon">💰</span> Revenue Stream 1</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text); margin-bottom: 8px;">Printing Transactions</div>
+            <ul class="bullet-list">
+              <li>Revenue from B/W printing</li>
+              <li>Revenue from Colour printing</li>
+              <li>Bulk printing & submission bundles</li>
+              <li>Continuous daily academic transaction volume</li>
+            </ul>
+          </div>
+
+          <div class="card" style="border-top: 4px solid var(--accent);">
+            <div class="card-title" style="color: var(--accent);"><span class="icon">📢</span> Revenue Stream 2</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text); margin-bottom: 8px;">Digital Advertising</div>
+            <ul class="bullet-list">
+              <li>Brands pay for advertising displayed on kiosk screens</li>
+              <li>Sponsored display slots during idle and transaction states</li>
+              <li>Brand-subsidized student print discounts</li>
+              <li><strong>High gross margin (90%+)</strong> media software revenue</li>
+            </ul>
+          </div>
+
+          <div class="card" style="border-top: 4px solid var(--success);">
+            <div class="card-title" style="color: var(--success);"><span class="icon">💻</span> Revenue Stream 3</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text); margin-bottom: 8px;">Institutional SaaS</div>
+            <ul class="bullet-list">
+              <li>Kiosk fleet management</li>
+              <li>Printing analytics & usage tracking</li>
+              <li>Departmental quota & billing</li>
+              <li>Remote device diagnostics & alerts</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 10: Long-Term Vision -->
+      <section class="slide" data-slide="10" data-notes="Share the long-term roadmap. We begin with printing to capture student trust and daily habit. We then expand into scanning, stationery dispensing, and digital campus utilities, becoming the essential smart utility hub on every Indian campus.">
+        <div class="slide-badge">Slide 10 • Long-Term Vision</div>
+        <h1 class="slide-title">From Printing Kiosk to Campus Utility Network</h1>
+        <p class="slide-subtitle">Building an integrated autonomous utility network that makes everyday campus services faster and accessible</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--primary);"><span class="icon">🚀</span> Phased Utility Expansion</div>
+            <div style="font-size: 14.5px; font-weight: 700; color: var(--text); margin-bottom: 8px;">Start with:</div>
+            <div style="padding: 8px 14px; background: #e0f2fe; border-radius: 6px; font-weight: 800; color: var(--primary); display: inline-block;">
+              🖨️ Automated Printing
+            </div>
+            <div style="font-size: 14.5px; font-weight: 700; color: var(--text); margin: 12px 0 6px 0;">↓ Then add:</div>
+            <ul class="bullet-list">
+              <li><strong>Scanning:</strong> Direct scan to Email, DigiLocker, Google Drive</li>
+              <li><strong>Document services:</strong> Certificate & ID card duplication</li>
+              <li><strong>Stationery:</strong> Dispensers for pens, graph sheets, file covers</li>
+              <li><strong>Digital forms:</strong> Direct administrative submission</li>
+              <li><strong>Campus payments:</strong> Smart ID integration & student wallet</li>
+              <li><strong>Advertising:</strong> Comprehensive campus DOOH network</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--success);"><span class="icon">🌐</span> The Core Vision</div>
+            <div style="padding: 16px; background: #f0fdf4; border: 2px solid var(--success); border-radius: 10px; margin-bottom: 14px;">
+              <p style="font-size: 16px; font-weight: 800; color: #166534; line-height: 1.5;">
+                "Build a network of smart self-service kiosks that make everyday campus services faster, more accessible, and less dependent on manual counters."
+              </p>
+            </div>
+            <ul class="bullet-list success">
+              <li>Faster turnaround (< 45 seconds)</li>
+              <li>24/7 availability across every academic building</li>
+              <li>Zero manual dependency and zero human error</li>
+              <li>Scalable across colleges, schools, and institutional campuses nationwide</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 11: Proposed Pilot at GPREC -->
+      <section class="slide" data-slide="11" data-notes="Ground the presentation in a concrete, actionable pilot plan at G. Pulla Reddy Engineering College. CIE faculty want to see how we will test the MVP, measure real student behavior, and prove unit economics before expanding.">
+        <div class="slide-badge">Slide 11 • Proposed Pilot</div>
+        <h1 class="slide-title">Proposed Pilot — G. Pulla Reddy Engineering College (GPREC)</h1>
+        <p class="slide-subtitle">Start with one working prototype at GPREC to validate student adoption and unit economics</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--primary);"><span class="icon">🧪</span> Pilot Objectives to Measure</div>
+            <ul class="bullet-list">
+              <li><strong>Test real student usage:</strong> Track daily active users and print volume</li>
+              <li><strong>Measure average printing time:</strong> Validate under-45-second goal</li>
+              <li><strong>Measure peak-hour demand:</strong> Study throughput during morning rush</li>
+              <li><strong>Study student adoption:</strong> Gauge satisfaction & repeat user rate</li>
+              <li><strong>Calculate operating cost per page:</strong> Toner, paper, electricity</li>
+              <li><strong>Test digital payment workflow:</strong> UPI success rate (>99%)</li>
+              <li><strong>Test advertisement display:</strong> Viewer engagement on kiosk screen</li>
+              <li><strong>Collect feedback:</strong> Structured surveys from students and faculty</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color: var(--success);"><span class="icon">📈</span> After Successful Validation: Scaling Path</div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+              <div style="padding: 10px 14px; background: #e0f2fe; border-radius: 8px; font-size: 14px; font-weight: 700; color: var(--primary);">
+                1️⃣ 1 Kiosk Prototype at GPREC (Library / Mech Block)
+              </div>
+              <div style="text-align: center; font-weight: 800; color: var(--primary);">↓</div>
+              <div style="padding: 10px 14px; background: #ede9fe; border-radius: 8px; font-size: 14px; font-weight: 700; color: var(--accent);">
+                2️⃣ Multiple Kiosks across GPREC (Hostels, Canteen, Labs)
+              </div>
+              <div style="text-align: center; font-weight: 800; color: var(--accent);">↓</div>
+              <div style="padding: 10px 14px; background: #dcfce7; border-radius: 8px; font-size: 14px; font-weight: 700; color: var(--success);">
+                3️⃣ Other Colleges in Kurnool and Andhra Pradesh
+              </div>
+              <div style="text-align: center; font-weight: 800; color: var(--success);">↓</div>
+              <div style="padding: 10px 14px; background: #fef3c7; border-radius: 8px; font-size: 14px; font-weight: 700; color: #b45309;">
+                4️⃣ Schools, Universities & Campuses Nationwide
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 12: Final Problem → Solution -->
+      <section class="slide" data-slide="12" data-notes="Summarize the pitch. Reinforce the contrast between the old painful way and the modern Print Bro solution. Conclude with an invitation for feedback, pilot approval, and mentorship from CIE faculty.">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;">
+          <div>
+            <div class="slide-badge">Slide 12 • Final Summary & CIE Ask</div>
+            <h1 class="slide-title">Final Problem → Solution</h1>
+            <p class="slide-subtitle">A clear side-by-side contrast of the traditional reality versus the Print Bro innovation</p>
+          </div>
+          <img src="printbro_logo.png" alt="PrintBro Logo" style="height: 65px; object-fit: contain; margin-left: 20px; flex-shrink: 0;" />
+        </div>
+
+        <table class="styled-table">
+          <thead>
+            <tr>
+              <th style="background: #991b1b;">Existing Problem</th>
+              <th style="background: #166534;">Print Bro Solution</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>❌ Long queues</td>
+              <td>✅ Self-service (< 45 seconds)</td>
+            </tr>
+            <tr>
+              <td>❌ Manual processing</td>
+              <td>✅ Automated workflow</td>
+            </tr>
+            <tr>
+              <td>❌ Crowded Xerox shops</td>
+              <td>✅ Distributed kiosks across campus</td>
+            </tr>
+            <tr>
+              <td>❌ Operator dependency</td>
+              <td>✅ Student-controlled digital interface</td>
+            </tr>
+            <tr>
+              <td>❌ Limited accessibility</td>
+              <td>✅ Campus deployment (24/7 in hostels)</td>
+            </tr>
+            <tr>
+              <td>❌ No additional revenue</td>
+              <td>✅ Advertising screen for high-margin monetization</td>
+            </tr>
+            <tr>
+              <td>❌ No usage visibility</td>
+              <td>✅ Central dashboard for institutional analytics</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout-box" style="margin-top: 18px; background: #f0fdf4; border-color: var(--success);">
+          <span style="font-size: 20px;">🚀</span>
+          <div><strong>Ready for CIE Pilot & Faculty Discussion:</strong> Seeking mentorship and permission to deploy the working prototype at GPREC. <em>Thank you — Open for Q&A!</em></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Footer Navigation Controls -->
+  <footer>
+    <div class="nav-hints">
+      <span>Use <kbd>←</kbd> <kbd>→</kbd> or <kbd>Space</kbd> to navigate</span>
+      <span>Press <kbd>F</kbd> for Fullscreen</span>
+      <span>Press <kbd>S</kbd> for Speaker Notes</span>
+      <span>Press <kbd>O</kbd> for Overview</span>
+    </div>
+    <div class="nav-btns">
+      <button class="nav-btn" id="prevBtn">← Previous</button>
+      <button class="nav-btn primary" id="nextBtn">Next →</button>
+    </div>
+  </footer>
+
+  <!-- Speaker Notes Drawer -->
+  <div class="speaker-notes-drawer" id="speakerNotesDrawer">
+    <div class="notes-header">
+      <span>🎙️ Presenter Talking Points (CIE Faculty)</span>
+      <span style="cursor: pointer;" id="closeNotesBtn">✕</span>
+    </div>
+    <div class="notes-content" id="notesContent">
+      Loading notes...
+    </div>
+  </div>
+
+  <!-- Grid Overview Modal -->
+  <div class="grid-modal" id="gridModal">
+    <div class="grid-header">
+      <h2 style="font-family: var(--font-display); font-size: 24px; color: #fff;">Slide Overview</h2>
+      <button class="ctrl-btn" id="closeGridBtn">✕ Close [O]</button>
+    </div>
+    <div class="grid-cards" id="gridCardsContainer">
+      <!-- Injected by JS -->
+    </div>
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const totalSlides = slides.length;
+    let currentSlide = 1;
+
+    const slideCounter = document.getElementById('slideCounter');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const notesBtn = document.getElementById('notesBtn');
+    const speakerNotesDrawer = document.getElementById('speakerNotesDrawer');
+    const closeNotesBtn = document.getElementById('closeNotesBtn');
+    const notesContent = document.getElementById('notesContent');
+    const gridBtn = document.getElementById('gridBtn');
+    const gridModal = document.getElementById('gridModal');
+    const closeGridBtn = document.getElementById('closeGridBtn');
+    const gridCardsContainer = document.getElementById('gridCardsContainer');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+
+    // Timer variables
+    let timerSeconds = 0;
+    let timerInterval = null;
+    const pitchTimer = document.getElementById('pitchTimer');
+    const timerToggleBtn = document.getElementById('timerToggleBtn');
+
+    function updateSlide(newIndex) {
+      if (newIndex < 1) newIndex = 1;
+      if (newIndex > totalSlides) newIndex = totalSlides;
+
+      slides.forEach(s => s.classList.remove('active'));
+      currentSlide = newIndex;
+      const targetSlide = slides[currentSlide - 1];
+      targetSlide.classList.add('active');
+
+      slideCounter.textContent = `${String(currentSlide).padStart(2, '0')} / ${String(totalSlides).padStart(2, '0')}`;
+      
+      // Update Speaker Notes
+      const notes = targetSlide.getAttribute('data-notes') || 'No notes for this slide.';
+      notesContent.textContent = notes;
+
+      prevBtn.disabled = (currentSlide === 1);
+      nextBtn.textContent = (currentSlide === totalSlides) ? 'Finish 🏁' : 'Next →';
+    }
+
+    prevBtn.addEventListener('click', () => updateSlide(currentSlide - 1));
+    nextBtn.addEventListener('click', () => updateSlide(currentSlide + 1));
+
+    // Keyboard navigation
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        updateSlide(currentSlide + 1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        updateSlide(currentSlide - 1);
+      } else if (e.key.toLowerCase() === 'f') {
+        toggleFullscreen();
+      } else if (e.key.toLowerCase() === 's') {
+        toggleNotes();
+      } else if (e.key.toLowerCase() === 'o') {
+        toggleGrid();
+      } else if (e.key === 'Escape') {
+        gridModal.classList.remove('open');
+        speakerNotesDrawer.classList.remove('open');
+      }
+    });
+
+    // Theme Toggle
+    themeToggleBtn.addEventListener('click', () => {
+      const currentTheme = document.body.getAttribute('data-theme');
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', newTheme);
+      themeToggleBtn.textContent = newTheme === 'light' ? '☀️ Theme' : '🌙 Theme';
+    });
+
+    // Notes Toggle
+    function toggleNotes() {
+      speakerNotesDrawer.classList.toggle('open');
+    }
+    notesBtn.addEventListener('click', toggleNotes);
+    closeNotesBtn.addEventListener('click', () => speakerNotesDrawer.classList.remove('open'));
+
+    // Fullscreen Toggle
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => alert(err.message));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+    fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+    // Grid Overview Generation
+    slides.forEach((s, idx) => {
+      const title = s.querySelector('.slide-title').textContent;
+      const card = document.createElement('div');
+      card.className = 'thumb-card';
+      card.innerHTML = `
+        <div class="thumb-num">SLIDE ${String(idx + 1).padStart(2, '0')}</div>
+        <div class="thumb-title">${title}</div>
+      `;
+      card.addEventListener('click', () => {
+        updateSlide(idx + 1);
+        gridModal.classList.remove('open');
+      });
+      gridCardsContainer.appendChild(card);
+    });
+
+    function toggleGrid() {
+      gridModal.classList.toggle('open');
+    }
+    gridBtn.addEventListener('click', toggleGrid);
+    closeGridBtn.addEventListener('click', () => gridModal.classList.remove('open'));
+
+    // Pitch Timer
+    function startTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        timerToggleBtn.textContent = '▶ Resume';
+      } else {
+        timerInterval = setInterval(() => {
+          timerSeconds++;
+          const mins = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
+          const secs = String(timerSeconds % 60).padStart(2, '0');
+          pitchTimer.textContent = `${mins}:${secs}`;
+        }, 1000);
+        timerToggleBtn.textContent = '⏸ Pause';
+      }
+    }
+    timerToggleBtn.addEventListener('click', startTimer);
+
+    // Initial setup
+    updateSlide(1);
+    startTimer();
+  </script>
+</body>
+</html>

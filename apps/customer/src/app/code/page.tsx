@@ -279,23 +279,13 @@ function CodeContent() {
         <span className="text-xs font-bold text-slate-500 font-mono">Job: {displayId || jobInfo?.displayId || 'Active'}</span>
       </div>
 
-      {/* 🌟 Top XPOS Branding (XPOS on top, PRINT ON SCREEN below, clean & premium) */}
+      {/* 🌟 Top Print Bro Branding */}
       <motion.div
         initial={{ y: -6, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         className="flex flex-col items-center justify-center text-center mt-1 mb-3"
       >
-        <div className="flex items-center gap-2.5 mb-0.5">
-          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-            <Printer className="w-5 h-5" />
-          </div>
-          <span className="font-display font-black text-3xl tracking-tight text-slate-900">
-            XPOS
-          </span>
-        </div>
-        <span className="text-[11px] font-black tracking-widest text-blue-600 uppercase bg-blue-50 px-3 py-0.5 rounded-full border border-blue-100">
-          PRINT ON SCREEN
-        </span>
+        <img src="/printbro_logo.png" alt="PrintBro" className="h-10 md:h-12 object-contain" />
       </motion.div>
 
       {/* 💖 ENLARGED, HIGH-IMPACT CHARMING & FLIRTY QUOTE BOX */}
@@ -367,7 +357,7 @@ function CodeContent() {
             </div>
 
             <p className="text-slate-600 text-sm mb-4">
-              Your document is ready in the tray at <strong className="text-blue-700 font-bold">{printedKiosk || 'XPOS Kiosk'}</strong>.
+              Your document is ready in the tray at <strong className="text-blue-700 font-bold">{printedKiosk || 'Print Bro Kiosk'}</strong>.
             </p>
 
             <div className="bg-white border border-blue-100 p-5 rounded-3xl mb-5 text-left space-y-3 shadow-md shadow-blue-500/5">
@@ -424,7 +414,7 @@ function CodeContent() {
                   📸 Take a screenshot of this code now
                 </p>
                 <p className="text-amber-900/90 text-xs mt-0.5 font-medium leading-tight max-w-sm mx-auto">
-                  Save this 6-digit code or take a screenshot before leaving. Valid for <strong className="font-black text-amber-950">24 Hours</strong> at any XPOS kiosk.
+                  Save this 6-digit code or take a screenshot before leaving. Valid for <strong className="font-black text-amber-950">24 Hours</strong> at any Print Bro kiosk.
                 </p>
               </div>
             )}
@@ -484,7 +474,7 @@ function CodeContent() {
 
             {/* Instructions */}
             <div className="bg-blue-50/80 p-4 rounded-2xl border border-blue-100 text-xs md:text-sm text-slate-700 text-center leading-relaxed">
-              Go to any XPOS Kiosk, tap <strong className="text-slate-900 font-extrabold">"ENTER CODE"</strong>, type <strong className="text-blue-700 font-mono font-bold">{code}</strong>, and your document will print immediately.
+              Go to any Print Bro Kiosk, tap <strong className="text-slate-900 font-extrabold">"ENTER CODE"</strong>, type <strong className="text-blue-700 font-mono font-bold">{code}</strong>, and your document will print immediately.
             </div>
           </motion.div>
         )}

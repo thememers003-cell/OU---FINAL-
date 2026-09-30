@@ -997,7 +997,7 @@ function RemotePrintContent() {
             <div>
               <span className="text-xs font-black text-blue-700 bg-blue-100 px-3.5 py-1 rounded-full uppercase tracking-wider">Universal Pickup</span>
               <h1 className="text-2xl md:text-3xl font-black text-slate-900 mt-2 mb-1 tracking-tight">Select Pickup Kiosk</h1>
-              <p className="text-slate-600 text-xs md:text-sm font-medium">Your 6-digit release code works at any active XPOS kiosk station</p>
+              <p className="text-slate-600 text-xs md:text-sm font-medium">Your 6-digit release code works at any active Print Bro kiosk station</p>
             </div>
 
             {/* Enlarged, Spacious & Prominent Universal Kiosk Box */}
@@ -1019,10 +1019,10 @@ function RemotePrintContent() {
 
                 <div>
                   <h3 className="text-xl md:text-2xl font-black text-slate-900 mb-1 tracking-tight">
-                    Any Available XPOS Kiosk
+                    Any Available Print Bro Kiosk
                   </h3>
                   <p className="text-slate-600 text-sm font-medium leading-relaxed">
-                    Walk up to <strong className="text-slate-900 font-bold">ANY active XPOS kiosk</strong> near you, tap <strong className="text-blue-700 font-bold">"ENTER CODE"</strong>, and collect your printed pages instantly.
+                    Walk up to <strong className="text-slate-900 font-bold">ANY active Print Bro kiosk</strong> near you, tap <strong className="text-blue-700 font-bold">"ENTER CODE"</strong>, and collect your printed pages instantly.
                   </p>
                 </div>
 
@@ -1084,7 +1084,7 @@ function RemotePrintContent() {
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-600 font-bold">Pickup Station</span>
-                <span className="text-slate-900 font-bold">Any Available XPOS Kiosk</span>
+                <span className="text-slate-900 font-bold">Any Available Print Bro Kiosk</span>
               </div>
               <div className="h-px bg-slate-200" />
               <div className="flex justify-between items-baseline pt-2">

@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'XPOS — Print On Screen',
+  title: 'Print Bro — Scan. Pay. Print.',
   description: 'Self-service printing kiosk. Upload, pay, and print from anywhere. Fast, simple, and secure.',
-  keywords: ['printing', 'kiosk', 'self-service', 'XPOS', 'print on screen'],
+  keywords: ['printing', 'kiosk', 'self-service', 'Print Bro', 'PrintBro', 'Scan. Pay. Print.'],
 };
 
 export default function RootLayout({

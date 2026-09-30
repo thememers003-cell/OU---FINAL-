@@ -450,18 +450,7 @@ export default function SuperAdminRootPage() {
         <div className="space-y-6">
           {/* Logo & Brand Header */}
           <div className="flex items-center gap-3 px-2 py-1">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/25 text-white">
-              <Zap className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-black text-lg text-slate-900 tracking-tight">XPOS</span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-sky-100 text-sky-700 rounded-md border border-sky-200">
-                  Super Admin
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 font-semibold">Live Enterprise Cockpit</p>
-            </div>
+            <img src="/printbro_logo.png" alt="PrintBro" className="h-10 object-contain" />
           </div>
 
           {/* Navigation Links */}

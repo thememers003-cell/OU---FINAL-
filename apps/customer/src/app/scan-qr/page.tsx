@@ -26,7 +26,7 @@ export default function ScanQRPage() {
 
           <h1 className="text-2xl font-display font-bold text-white mb-3">Scan the QR Code</h1>
           <p className="text-dark-400 mb-8">
-            Use your phone camera to scan the QR code displayed on the XPOS kiosk screen.
+            Use your phone camera to scan the QR code displayed on the Print Bro kiosk screen.
           </p>
 
           <div className="glass-card p-8 mb-8">
@@ -40,7 +40,7 @@ export default function ScanQRPage() {
 
           <div className="space-y-3 text-left">
             {[
-              { n: 1, t: 'Find an XPOS kiosk' },
+              { n: 1, t: 'Find a Print Bro kiosk' },
               { n: 2, t: 'Scan the QR code on screen' },
               { n: 3, t: 'Upload your document on your phone' },
               { n: 4, t: 'Pay & collect your printout' },

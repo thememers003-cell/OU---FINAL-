@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'XPOS Super Admin Control Center',
+  title: 'Print Bro Super Admin Control Center',
   description: 'Enterprise Cloud Fleet & Print Management Control Center',
 };
 

@@ -21,7 +21,7 @@ export const CHARMING_LINES: string[] = [
   "Looking good, printing fast, and conquering the day! 💫",
   "This printer is blushing because you chose it! 🙈🖨️",
   "Are you made of toner? Because you just made everything sharp and bright! ✨",
-  "You + XPOS = A match made in printing heaven 💖",
+  "You + Print Bro = A match made in printing heaven 💖",
   "We officially declare you the most stylish customer of the day! 👑",
   "Your vibe is 100% full-color, high-definition perfection! 🌈",
   "Can we keep you as our permanent customer of the month? 🥇",
@@ -39,7 +39,7 @@ export const CHARMING_LINES: string[] = [
   "Quality prints for quality people like you! 💎",
   "You have impeccable taste in self-service printing! 🕶️",
   "Big things start with small prints. Go conquer the world! 🌟",
-  "Thank you for trusting XPOS with your important pages! 📄",
+  "Thank you for trusting Print Bro with your important pages! 📄",
   "You're officially our favorite VIP today! 👑",
   "Thank you for keeping it smart, fast, and digital! 🤖💙",
 
@@ -100,7 +100,7 @@ export const CHARMING_LINES: string[] = [
   "Your code was entered with surgical precision! 🎯",
   "Toner applied with scientific elegance! 🧪✨",
   "From phone to paper in seconds flat! 📲📄",
-  "Effortless printing powered by XPOS Cloud! 🌐",
+  "Effortless printing powered by Print Bro Cloud! 🌐",
   "Paper handling at peak performance! 🏎️",
   "Thank you for experiencing the next generation of printing! 🔮",
   "Fast, reliable, and always ready when you are! ⏱️",
@@ -144,10 +144,10 @@ export const COMPLETION_CHARMING_LINES: string[] = [
   "Take your pages and go write your own success story! 📖",
   "So glad we could help make your day a little easier! 🕊️",
   "You handled that like an absolute pro! Have a great day! 👏",
-  "Thank you for letting XPOS power your productivity today! ⚡",
+  "Thank you for letting Print Bro power your productivity today! ⚡",
   "Take a deep breath of that fresh paper scent — you're done! 🌿",
   "Your hard work is in your hands now. Go be amazing! 💫",
-  "Safe travels and see you next time at XPOS! 🏪💙",
+  "Safe travels and see you next time at Print Bro! 🏪💙",
 
   // ── Extra Playful & Witty ──
   "Tray status: Loaded with brilliance. Customer status: Legendary. 👑",
@@ -159,7 +159,7 @@ export const COMPLETION_CHARMING_LINES: string[] = [
   "One small grab from the tray, one giant leap for your to-do list! 📋",
   "Printer cooldown initiated. Thanks for bringing the heat! 🔥",
   "You came, you clicked, you printed like a champion! 🏅",
-  "XPOS loves you! See you for the next print! 💖"
+  "Print Bro loves you! See you for the next print! 💖"
 ];
 
 export function getRandomCharmingLine(): string {

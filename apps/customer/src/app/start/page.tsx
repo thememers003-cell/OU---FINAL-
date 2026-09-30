@@ -66,7 +66,7 @@ export default function StartPage() {
               <QrCode className="w-7 h-7" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-black text-slate-900 mb-0.5">I am at an XPOS Kiosk</h3>
+              <h3 className="text-lg font-black text-slate-900 mb-0.5">I am at a Print Bro Kiosk</h3>
               <p className="text-slate-600 text-xs font-medium">Scan the QR code on the kiosk screen to print immediately</p>
             </div>
           </motion.button>
