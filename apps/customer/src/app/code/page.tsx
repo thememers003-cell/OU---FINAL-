@@ -1,10 +1,31 @@
 'use client';
 
-import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useState, useEffect, Suspense, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Clock, Copy, ArrowLeft, Loader2, Camera, ShieldCheck, Check, Printer, Sparkles, Heart, MessageCircleHeart } from 'lucide-react';
-import { generatePrintCode, getJob } from '../../lib/api';
+import {
+  CheckCircle2,
+  Clock,
+  Copy,
+  ArrowLeft,
+  Loader2,
+  Camera,
+  ShieldCheck,
+  Check,
+  Printer,
+  Sparkles,
+  Heart,
+  MessageCircleHeart,
+  QrCode,
+  FileText,
+  Layers,
+  Smartphone,
+  X,
+  AlertCircle,
+  RefreshCw,
+  Zap,
+} from 'lucide-react';
+import { generatePrintCode, getJob, pairKioskWithCode } from '../../lib/api';
 import { getRandomCharmingLine, getRandomCompletionLine } from '../../lib/charming-lines';
 import { playKeySound } from '../../lib/sound';
 
@@ -13,6 +34,8 @@ function CodeContent() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get('jobId');
   const displayId = searchParams.get('displayId');
+  const pairKioskParam = searchParams.get('pairKiosk') || searchParams.get('kiosk');
+  const pairTokenParam = searchParams.get('pairToken') || searchParams.get('token');
 
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<Date | null>(null);
@@ -23,6 +46,14 @@ function CodeContent() {
   const [jobInfo, setJobInfo] = useState<any>(null);
   const [jobStatus, setJobStatus] = useState<string>('QUEUED');
   const [printedKiosk, setPrintedKiosk] = useState<string | null>(null);
+
+  // Scanner state (WhatsApp Web-Style Pairing)
+  const [showScanner, setShowScanner] = useState(false);
+  const [isPairing, setIsPairing] = useState(false);
+  const [pairingStatus, setPairingStatus] = useState('');
+  const [scannerError, setScannerError] = useState('');
+  const [manualKioskId, setManualKioskId] = useState('');
+  const html5QrCodeRef = useRef<any>(null);
 
   // Random charming line for active code screen
   const [charmingLine, setCharmingLine] = useState<string>('');
@@ -35,6 +66,181 @@ function CodeContent() {
   }, []);
 
   const [resolvedJobId, setResolvedJobId] = useState<string | null>(jobId || null);
+
+  // ── Auto-Pair if kiosk parameters provided in URL ──
+  const autoPairAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (!code || !pairKioskParam || autoPairAttemptedRef.current || jobStatus === 'COMPLETED' || jobStatus === 'PRINTING') {
+      return;
+    }
+    autoPairAttemptedRef.current = true;
+    handlePairWithKiosk(pairKioskParam, pairTokenParam || undefined);
+  }, [code, pairKioskParam, pairTokenParam, jobStatus]);
+
+  // ── Core Kiosk Pairing Handler (WhatsApp Web Style) ──
+  const handlePairWithKiosk = async (targetKioskId: string, pairToken?: string) => {
+    if (!targetKioskId || isPairing) return;
+    setIsPairing(true);
+    setScannerError('');
+    setPairingStatus(`Linking with Station ${targetKioskId}...`);
+
+    try {
+      const res = await pairKioskWithCode({
+        code: code || '',
+        kioskId: targetKioskId.trim(),
+        pairToken: pairToken || undefined,
+        jobId: resolvedJobId || undefined,
+      });
+
+      if (res.success) {
+        playKeySound('success');
+        setPairingStatus(`✓ Paired with ${targetKioskId}! Starting Print...`);
+        setPrintedKiosk(targetKioskId);
+        setJobStatus('PRINTING');
+
+        // Stop scanner safely
+        if (html5QrCodeRef.current) {
+          try {
+            await html5QrCodeRef.current.stop();
+          } catch {}
+        }
+
+        setTimeout(() => {
+          setShowScanner(false);
+          setIsPairing(false);
+        }, 1200);
+      } else {
+        playKeySound('error');
+        setScannerError(res.error || 'Failed to link with kiosk. Please try again.');
+        setIsPairing(false);
+      }
+    } catch (e: any) {
+      playKeySound('error');
+      setScannerError(e?.message || 'Connection error while pairing with kiosk.');
+      setIsPairing(false);
+    }
+  };
+
+  // ── Process Scanned QR Text ──
+  const handleQrScanned = useCallback((decodedText: string) => {
+    if (isPairing) return;
+    console.log('📷 Scanned QR Data:', decodedText);
+
+    let extractedKioskId = '';
+    let extractedToken = '';
+
+    // 1. Try parsing JSON format: { type: 'xpos_kiosk_pair', kioskId: 'XPOS-001', token: '...' }
+    try {
+      const parsed = JSON.parse(decodedText);
+      if (parsed.kioskId) {
+        extractedKioskId = parsed.kioskId;
+        extractedToken = parsed.token || parsed.pairToken || '';
+      }
+    } catch {
+      // 2. Try parsing URL format: https://.../code?kiosk=XPOS-001&pairToken=...
+      try {
+        const url = new URL(decodedText);
+        extractedKioskId = url.searchParams.get('kiosk') || url.searchParams.get('pairKiosk') || '';
+        extractedToken = url.searchParams.get('token') || url.searchParams.get('pairToken') || '';
+      } catch {
+        // 3. Try string format "XPOS_PAIR:XPOS-001:token" or direct "XPOS-001"
+        if (decodedText.startsWith('XPOS_PAIR:')) {
+          const parts = decodedText.split(':');
+          extractedKioskId = parts[1] || '';
+          extractedToken = parts[2] || '';
+        } else if (decodedText.startsWith('XPOS-')) {
+          extractedKioskId = decodedText.trim();
+        }
+      }
+    }
+
+    if (!extractedKioskId) {
+      setScannerError('Could not recognize a valid Print Bro kiosk QR code. Please scan the QR code on the kiosk screen.');
+      return;
+    }
+
+    handlePairWithKiosk(extractedKioskId, extractedToken);
+  }, [isPairing, code, resolvedJobId]);
+
+  // ── Camera Scanner Lifecycle using Html5Qrcode ──
+  useEffect(() => {
+    if (!showScanner) {
+      if (html5QrCodeRef.current) {
+        try {
+          html5QrCodeRef.current.stop().catch(() => {});
+        } catch {}
+        html5QrCodeRef.current = null;
+      }
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function initScanner() {
+      try {
+        setScannerError('');
+        setPairingStatus('Opening camera...');
+        const { Html5Qrcode } = await import('html5-qrcode');
+
+        if (isCancelled) return;
+
+        const scannerId = 'kiosk-qr-scanner-box';
+        const scanner = new Html5Qrcode(scannerId);
+        html5QrCodeRef.current = scanner;
+
+        const config = {
+          fps: 15,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        };
+
+        const successCallback = (decodedText: string) => {
+          if (!isCancelled) {
+            handleQrScanned(decodedText);
+          }
+        };
+
+        // Try environment camera first
+        try {
+          await scanner.start(
+            { facingMode: 'environment' },
+            config,
+            successCallback,
+            () => {}
+          );
+          if (!isCancelled) setPairingStatus('Point camera at the kiosk screen QR code');
+        } catch (envErr) {
+          // Fallback to any camera
+          await scanner.start(
+            { facingMode: 'user' },
+            config,
+            successCallback,
+            () => {}
+          );
+          if (!isCancelled) setPairingStatus('Point camera at the kiosk screen QR code');
+        }
+      } catch (err: any) {
+        console.warn('Scanner camera error:', err);
+        if (!isCancelled) {
+          setScannerError('Camera access required. Please grant permission or type Station ID below.');
+        }
+      }
+    }
+
+    // Small delay to ensure DOM element is mounted
+    const timer = setTimeout(initScanner, 200);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+      if (html5QrCodeRef.current) {
+        try {
+          html5QrCodeRef.current.stop().catch(() => {});
+        } catch {}
+        html5QrCodeRef.current = null;
+      }
+    };
+  }, [showScanner, handleQrScanned]);
 
   // ── Load directly from API (Zero cross-job caching bugs) ──
   useEffect(() => {
@@ -419,6 +625,63 @@ function CodeContent() {
               </div>
             )}
 
+            {/* ════════════════════════════════════════════════ */}
+            {/* 📄 2. UPLOADED FILE & PAGES TO BE PRINTED DETAILS */}
+            {/* ════════════════════════════════════════════════ */}
+            <div className="bg-white p-4.5 rounded-3xl border-2 border-blue-200 shadow-md shadow-blue-500/5 text-left space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <p className="text-sm font-black text-slate-900 truncate max-w-[210px] md:max-w-[260px]">
+                      {jobInfo?.file?.originalName || 'Uploaded Document'}
+                    </p>
+                    <p className="text-[11px] font-semibold text-slate-500">
+                      Uploaded: <strong className="text-slate-800 font-bold">{jobInfo?.file?.pageCount || jobInfo?.totalPages || 1}</strong> {jobInfo?.file?.pageCount === 1 ? 'Page' : 'Pages'}
+                    </p>
+                  </div>
+                </div>
+                <span className="flex-shrink-0 text-xs font-black bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full">
+                  {jobInfo?.colorMode === 'COLOR' ? '🎨 Color' : '⬛ B&W'}
+                </span>
+              </div>
+
+              {/* Exact Pages to Print & Print Settings Badges */}
+              <div className="grid grid-cols-3 gap-2 text-center pt-0.5">
+                <div className="p-2.5 rounded-2xl bg-gradient-to-b from-blue-50 to-indigo-50/70 border-2 border-blue-200 flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider">Pages To Print</span>
+                  <span className="text-xl md:text-2xl font-black text-blue-950 font-display">
+                    {jobInfo?.totalPages || 1}
+                  </span>
+                  <span className="text-[10px] text-blue-600 font-bold">
+                    {jobInfo?.totalPages === 1 ? 'Total Page' : 'Total Pages'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Copies</span>
+                  <span className="text-xl md:text-2xl font-black text-slate-900 font-display">
+                    {jobInfo?.copies || 1}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-bold">
+                    {jobInfo?.copies === 1 ? 'Copy' : 'Copies'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Format</span>
+                  <span className="text-xs md:text-sm font-black text-slate-900 mt-1">
+                    {jobInfo?.sides === 'DOUBLE' ? '2-Sided' : '1-Sided'}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-bold">
+                    {jobInfo?.paperSize || 'A4'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* 6-Digit Code Box */}
             <div className="bg-white p-6 rounded-3xl border-2 border-blue-200 shadow-xl shadow-blue-500/5">
               <p className="text-xs md:text-sm text-blue-700 font-black uppercase tracking-wider mb-4">6-Digit Kiosk Release Code</p>
@@ -461,6 +724,41 @@ function CodeContent() {
               </button>
             </div>
 
+            {/* ════════════════════════════════════════════════ */}
+            {/* ⚡ 1. WHATSAPP WEB STYLE SCAN KIOSK QR BUTTON */}
+            {/* ════════════════════════════════════════════════ */}
+            <div className="relative">
+              <div className="flex items-center gap-2 my-2 justify-center">
+                <span className="h-px bg-slate-200 flex-1" />
+                <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">or print without typing</span>
+                <span className="h-px bg-slate-200 flex-1" />
+              </div>
+
+              <motion.button
+                type="button"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  playKeySound('tap');
+                  setScannerError('');
+                  setShowScanner(true);
+                }}
+                className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm md:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-blue-500/25 border-2 border-blue-400 transition-all group"
+                id="btn-scan-kiosk-qr"
+              >
+                <div className="p-1.5 bg-white/20 rounded-xl group-hover:scale-110 transition-transform">
+                  <QrCode className="w-5 h-5 text-white" />
+                </div>
+                <span>SCAN KIOSK QR TO PRINT</span>
+                <span className="bg-emerald-400 text-slate-950 text-[10px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                  Instant
+                </span>
+              </motion.button>
+              <p className="text-[11px] text-slate-500 text-center mt-1.5 font-medium">
+                ⚡ WhatsApp Web style — point your phone camera at the kiosk screen
+              </p>
+            </div>
+
             {/* 24-Hour Expiry Timer */}
             <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div className="flex items-center gap-2 text-slate-700">
@@ -474,11 +772,126 @@ function CodeContent() {
 
             {/* Instructions */}
             <div className="bg-blue-50/80 p-4 rounded-2xl border border-blue-100 text-xs md:text-sm text-slate-700 text-center leading-relaxed">
-              Go to any Print Bro Kiosk, tap <strong className="text-slate-900 font-extrabold">"ENTER CODE"</strong>, type <strong className="text-blue-700 font-mono font-bold">{code}</strong>, and your document will print immediately.
+              Scan the QR on the kiosk screen, or tap <strong className="text-slate-900 font-extrabold">"ENTER CODE"</strong> and enter <strong className="text-blue-700 font-mono font-bold">{code}</strong> to start printing immediately.
             </div>
           </motion.div>
         )}
       </div>
+
+      {/* ════════════════════════════════════════════════ */}
+      {/* 📷 WHATSAPP WEB STYLE CAMERA QR SCANNER MODAL */}
+      {/* ════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {showScanner && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white w-full max-w-sm rounded-[32px] overflow-hidden shadow-2xl border-2 border-blue-200 flex flex-col text-center"
+            >
+              {/* Modal Top Bar */}
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                    <QrCode className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-black text-slate-900 text-sm">Scan Kiosk QR Code</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold">WhatsApp Web Style Pairing</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    playKeySound('tap');
+                    setShowScanner(false);
+                    setScannerError('');
+                  }}
+                  className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Viewfinder Area */}
+              <div className="p-5 flex flex-col items-center">
+                <div className="relative w-64 h-64 rounded-3xl overflow-hidden bg-slate-900 shadow-inner border-2 border-blue-500">
+                  {/* Container for html5-qrcode video */}
+                  <div id="kiosk-qr-scanner-box" className="w-full h-full" />
+
+                  {/* Corner Target Highlights */}
+                  <div className="absolute top-3 left-3 w-6 h-6 border-t-4 border-l-4 border-blue-400 rounded-tl-lg pointer-events-none" />
+                  <div className="absolute top-3 right-3 w-6 h-6 border-t-4 border-r-4 border-blue-400 rounded-tr-lg pointer-events-none" />
+                  <div className="absolute bottom-3 left-3 w-6 h-6 border-b-4 border-l-4 border-blue-400 rounded-bl-lg pointer-events-none" />
+                  <div className="absolute bottom-3 right-3 w-6 h-6 border-b-4 border-r-4 border-blue-400 rounded-br-lg pointer-events-none" />
+
+                  {/* Animated Glowing Laser Line */}
+                  <motion.div
+                    animate={{ y: [0, 220, 0] }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                    className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#38bdf8] pointer-events-none"
+                  />
+
+                  {/* Pairing Active Overlay */}
+                  {isPairing && (
+                    <div className="absolute inset-0 bg-blue-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4">
+                      <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mb-3" />
+                      <p className="font-black text-sm">{pairingStatus}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Status or Error Banner */}
+                {scannerError ? (
+                  <div className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold text-center">
+                    <AlertCircle className="w-4 h-4 inline-block mr-1 text-rose-500" />
+                    <span>{scannerError}</span>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs font-semibold text-slate-600">
+                    {pairingStatus || 'Align the QR code on the kiosk screen inside the frame'}
+                  </p>
+                )}
+
+                {/* Manual Station ID Fallback (Preserves 100% Functionality if camera is denied) */}
+                <div className="w-full mt-4 pt-4 border-t border-slate-100 space-y-2">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Or Enter Station ID Manually
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. XPOS-001"
+                      value={manualKioskId}
+                      onChange={(e) => setManualKioskId(e.target.value.toUpperCase())}
+                      className="flex-1 px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-blue-500 text-xs font-bold font-mono text-slate-900 outline-none uppercase"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (manualKioskId.trim()) {
+                          handlePairWithKiosk(manualKioskId.trim());
+                        }
+                      }}
+                      disabled={isPairing || !manualKioskId.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs shadow-sm transition-all"
+                    >
+                      Pair
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

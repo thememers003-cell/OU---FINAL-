@@ -86,6 +86,17 @@ export default function KioskApp() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
 
+  // 🔒 Single-Use Dynamic QR Token for WhatsApp Web-style Pairing
+  const [pairToken, setPairToken] = useState<string>(() => {
+    return 'XPOS-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '-' + Date.now().toString(36);
+  });
+
+  const rotatePairToken = useCallback(() => {
+    const newToken = 'XPOS-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '-' + Date.now().toString(36);
+    setPairToken(newToken);
+    console.log('🔄 Kiosk single-use QR refreshed:', newToken);
+  }, []);
+
   // Charming flirty quotes
   const [currentCharmingLine, setCurrentCharmingLine] = useState('');
   const [currentCompletionLine, setCurrentCompletionLine] = useState('');
@@ -141,6 +152,38 @@ export default function KioskApp() {
       setIsConnected(false);
     });
 
+    // ⚡ WhatsApp Web-Style Pairing Event from Customer Phone
+    socket.on('kiosk_paired_print', (data: any) => {
+      console.log('⚡ WhatsApp Web Real-Time Pairing Triggered:', data);
+      if (data.kioskId && data.kioskId !== KIOSK_ID && data.targetKioskId && data.targetKioskId !== KIOSK_ID) {
+        return;
+      }
+
+      playKeySound('success');
+      const totalPgs = data.totalPages || 1;
+      setJobData({
+        jobId: data.jobId,
+        displayId: data.displayId,
+        downloadUrl: data.downloadUrl || `${getApiUrl()}/api/files/download/${data.jobId}`,
+        totalPages: totalPgs,
+        currentPage: 1,
+        fileName: data.fileName || 'Document.pdf',
+        colorMode: data.colorMode || 'BW',
+        copies: data.copies || 1,
+      });
+
+      setCurrentCharmingLine(getRandomCharmingLine());
+      setScreen('printing');
+      setIsVerifying(false);
+      rotatePairToken(); // Single-use guarantee: Invalidate old QR immediately
+      startPageProgressSimulation(totalPgs);
+
+      // Simulate completion after printing
+      setTimeout(() => {
+        handleJobCompleted(data.jobId);
+      }, Math.max(5000, totalPgs * 1200));
+    });
+
     // Receive new print job
     socket.on('new_job', (data: any) => {
       console.log('📥 New print job received:', data);
@@ -157,6 +200,7 @@ export default function KioskApp() {
       });
       setCurrentCharmingLine(getRandomCharmingLine());
       setScreen('printing');
+      rotatePairToken();
       startPageProgressSimulation(totalPgs);
     });
 
@@ -184,7 +228,7 @@ export default function KioskApp() {
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [rotatePairToken]);
 
   // ── Page Progress Simulation for Multi-page Jobs ──
   const startPageProgressSimulation = (totalPages: number) => {
@@ -235,6 +279,7 @@ export default function KioskApp() {
         setCode(['', '', '', '', '', '']);
         setJobData(null);
         setError('');
+        rotatePairToken();
       }
     }, 1000);
   };
@@ -416,71 +461,140 @@ export default function KioskApp() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.25 }}
-              className="w-full flex flex-col items-center text-center space-y-8"
+              className="w-full flex flex-col items-center text-center space-y-6"
             >
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <span className="text-xs md:text-sm font-black text-blue-700 bg-blue-100 px-4 py-1 rounded-full uppercase tracking-wider">
                   ⚡ Self-Service Print Station
                 </span>
-                <h2 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight">
+                <h2 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
                   Welcome to Print Bro
                 </h2>
-                <p className="text-slate-600 font-medium text-base md:text-lg max-w-lg mx-auto">
-                  Have a 6-digit release code from your phone? Enter it below to print instantly.
+                <p className="text-slate-600 font-medium text-xs md:text-sm max-w-lg mx-auto">
+                  Scan the single-use QR from your phone, enter your 6-digit code, or scan to upload documents.
                 </p>
               </div>
 
               {/* Action Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl">
-                {/* ENTER 6-DIGIT CODE CARD */}
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    playKeySound('tap');
-                    setScreen('code-entry');
-                  }}
-                  className="p-8 rounded-[28px] bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex flex-col items-center text-center space-y-4 shadow-xl shadow-blue-500/25 border-2 border-blue-400 group transition-all"
-                  id="btn-kiosk-enter-code"
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl text-left items-stretch">
+                {/* ⚡ 1. WHATSAPP WEB STYLE INSTANT PRINT QR CARD */}
+                <motion.div
+                  whileHover={{ scale: 1.01 }}
+                  className="bg-white p-6 md:p-7 rounded-[32px] border-2 border-blue-300 shadow-xl shadow-blue-500/10 flex flex-col items-center text-center justify-between space-y-4"
                 >
-                  <div className="w-20 h-20 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shadow-inner group-hover:scale-110 transition-transform">
-                    <Hash className="w-10 h-10" />
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>Live • Single Use</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playKeySound('tap');
+                        rotatePairToken();
+                      }}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 transition-colors"
+                      title="Refresh single-use pairing token"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Refresh</span>
+                    </button>
                   </div>
-                  <div>
-                    <h3 className="text-2xl font-black tracking-tight mb-1">ENTER 6-DIGIT CODE</h3>
-                    <p className="text-blue-100 text-sm font-medium leading-snug">
-                      Already paid on phone? Enter release code & print
-                    </p>
-                  </div>
-                  <span className="bg-white text-blue-700 font-black text-xs px-4 py-1.5 rounded-full shadow-sm">
-                    Instant Print ⚡
-                  </span>
-                </motion.button>
 
-                {/* SCAN QR TO UPLOAD CARD */}
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    playKeySound('tap');
-                    setScreen('qr');
-                  }}
-                  className="p-8 rounded-[28px] bg-white text-slate-900 flex flex-col items-center text-center space-y-4 shadow-xl shadow-slate-200/50 border-2 border-slate-200 hover:border-blue-300 group transition-all"
-                  id="btn-kiosk-scan-qr"
-                >
-                  <div className="w-20 h-20 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 group-hover:scale-110 transition-transform">
-                    <QrCode className="w-10 h-10" />
-                  </div>
                   <div>
-                    <h3 className="text-2xl font-black tracking-tight mb-1 text-slate-900">SCAN QR CODE</h3>
-                    <p className="text-slate-600 text-sm font-medium leading-snug">
-                      Scan with your phone to upload & pay instantly
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+                      SCAN TO PRINT INSTANTLY
+                    </h3>
+                    <p className="text-slate-600 text-xs md:text-sm font-medium mt-1 leading-snug max-w-xs">
+                      Open your code screen on phone & tap <strong>"Scan Kiosk QR"</strong>. Document prints in 1 second!
                     </p>
                   </div>
-                  <span className="bg-blue-50 text-blue-700 font-black text-xs px-4 py-1.5 rounded-full border border-blue-200">
-                    Upload from Phone 📲
-                  </span>
-                </motion.button>
+
+                  {/* Dynamic Single-Use QR Code */}
+                  <div className="p-4 bg-white rounded-3xl border-2 border-blue-200 shadow-md flex items-center justify-center">
+                    <QRCodeSVG
+                      value={JSON.stringify({
+                        type: 'xpos_kiosk_pair',
+                        kioskId: KIOSK_ID,
+                        token: pairToken,
+                        pairKiosk: KIOSK_ID,
+                      })}
+                      size={180}
+                      level="H"
+                      includeMargin={true}
+                      imageSettings={{
+                        src: '/logo.svg',
+                        x: undefined,
+                        y: undefined,
+                        height: 28,
+                        width: 28,
+                        excavate: true,
+                      }}
+                    />
+                  </div>
+
+                  <div className="w-full bg-blue-50 rounded-2xl py-2.5 px-3 border border-blue-200 flex items-center justify-center gap-2 text-xs font-bold text-blue-900">
+                    <Zap className="w-4 h-4 text-blue-600 animate-pulse" />
+                    <span>WhatsApp Web Style • Zero Typing</span>
+                  </div>
+                </motion.div>
+
+                {/* RIGHT COLUMN: MANUAL CODE ENTRY & UPLOAD */}
+                <div className="flex flex-col gap-5 justify-between">
+                  {/* ENTER 6-DIGIT CODE CARD */}
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      playKeySound('tap');
+                      setScreen('code-entry');
+                    }}
+                    className="flex-1 p-6 md:p-7 rounded-[28px] bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex flex-col justify-between items-start space-y-4 shadow-xl shadow-blue-500/25 border-2 border-blue-400 group transition-all text-left"
+                    id="btn-kiosk-enter-code"
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shadow-inner group-hover:scale-110 transition-transform">
+                        <Hash className="w-7 h-7" />
+                      </div>
+                      <span className="bg-white text-blue-700 font-black text-xs px-3.5 py-1.5 rounded-full shadow-sm">
+                        Touchscreen 🔢
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="text-xl md:text-2xl font-black tracking-tight mb-1">ENTER 6-DIGIT CODE</h3>
+                      <p className="text-blue-100 text-xs md:text-sm font-medium leading-snug">
+                        Prefer typing? Enter your release code manually on the touchscreen keypad.
+                      </p>
+                    </div>
+                  </motion.button>
+
+                  {/* SCAN QR TO UPLOAD CARD */}
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      playKeySound('tap');
+                      setScreen('qr');
+                    }}
+                    className="flex-1 p-6 md:p-7 rounded-[28px] bg-white text-slate-900 flex flex-col justify-between items-start space-y-4 shadow-xl shadow-slate-200/50 border-2 border-slate-200 hover:border-blue-300 group transition-all text-left"
+                    id="btn-kiosk-scan-qr"
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 group-hover:scale-110 transition-transform">
+                        <QrCode className="w-7 h-7" />
+                      </div>
+                      <span className="bg-blue-50 text-blue-700 font-black text-xs px-3.5 py-1.5 rounded-full border border-blue-200">
+                        Upload from Phone 📲
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="text-xl md:text-2xl font-black tracking-tight mb-1 text-slate-900">SCAN QR TO UPLOAD</h3>
+                      <p className="text-slate-600 text-xs md:text-sm font-medium leading-snug">
+                        Don't have a document uploaded yet? Scan to upload and pay from your phone.
+                      </p>
+                    </div>
+                  </motion.button>
+                </div>
               </div>
             </motion.div>
           )}

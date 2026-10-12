@@ -169,6 +169,18 @@ export async function verifyPrintCode(code: string, kioskId: string) {
   });
 }
 
+export async function pairKioskWithCode(data: {
+  code?: string;
+  kioskId: string;
+  pairToken?: string;
+  jobId?: string;
+}) {
+  return apiRequest<any>('/api/print-codes/pair-kiosk', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // ── Admin ──
 export async function getDashboard() {
   return apiRequest<any>('/api/admin/dashboard');

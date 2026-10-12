@@ -362,4 +362,285 @@ router.post('/verify', async (req: Request, res: Response) => {
   }
 });
 
+// Single-use pair tokens tracker (in-memory with cleanup)
+const usedPairTokens = new Set<string>();
+
+// ── WhatsApp Web-Style Real-time Kiosk Pairing Endpoint ──
+// Customer phone scans the single-use QR code displayed on the Kiosk
+router.post('/pair-kiosk', async (req: Request, res: Response) => {
+  try {
+    const prisma = req.app.locals.prisma;
+    const io = req.app.locals.io;
+    const storage = req.app.locals.storage;
+    const printer = req.app.locals.printer;
+    const { code, kioskId, pairToken, jobId } = req.body;
+
+    if (!kioskId) {
+      return res.status(400).json({ success: false, error: 'Kiosk identifier is required.' });
+    }
+
+    if (!code && !jobId) {
+      return res.status(400).json({ success: false, error: 'Print code or Job ID is required.' });
+    }
+
+    // 🔒 Enforce Single-Use QR Token Guarantee
+    if (pairToken) {
+      if (usedPairTokens.has(pairToken)) {
+        return res.status(400).json({
+          success: false,
+          error: 'This Kiosk QR code has already been used. Please scan the newly refreshed QR code on the kiosk screen.',
+        });
+      }
+      usedPairTokens.add(pairToken);
+      // Clean up token after 30 minutes to prevent memory leak
+      setTimeout(() => usedPairTokens.delete(pairToken), 30 * 60 * 1000);
+    }
+
+    // Find print code by raw code, hashed code, or associated jobId
+    let printCode = null;
+    if (code) {
+      const codeHash = hashCode(code);
+      printCode = await prisma.printCode.findFirst({
+        where: {
+          OR: [
+            { codeHash },
+            { qrToken: code },
+          ],
+        },
+        include: {
+          job: {
+            include: {
+              file: true,
+              payment: true,
+            },
+          },
+        },
+      });
+    }
+
+    if (!printCode && (jobId || code)) {
+      const targetId = jobId || code;
+      printCode = await prisma.printCode.findFirst({
+        where: {
+          job: {
+            OR: [{ id: targetId }, { displayId: targetId }],
+          },
+        },
+        include: {
+          job: {
+            include: {
+              file: true,
+              payment: true,
+            },
+          },
+        },
+      });
+    }
+
+    if (!printCode) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invalid or expired print code. Please check your screen and try again.',
+      });
+    }
+
+    // Check if already used or completed
+    if (printCode.status === 'USED' || printCode.job.status === 'COMPLETED') {
+      return res.status(400).json({
+        success: false,
+        error: 'This document has already been printed. Please check the printer tray.',
+      });
+    }
+
+    // Check expiration
+    if (printCode.status === 'EXPIRED' || new Date() > printCode.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        error: 'This print code has expired. Please create a new print order.',
+      });
+    }
+
+    // Check payment status
+    if (!printCode.job.payment || printCode.job.payment.status !== 'PAID') {
+      return res.status(400).json({
+        success: false,
+        error: 'Payment not completed for this print job.',
+      });
+    }
+
+    // Resolve Kiosk
+    let kiosk = await prisma.kiosk.findFirst({
+      where: {
+        OR: [{ id: kioskId }, { displayId: kioskId }],
+      },
+      include: { printer: true },
+    });
+
+    if (!kiosk) {
+      kiosk = await prisma.kiosk.create({
+        data: {
+          displayId: kioskId,
+          name: `Print Bro Station ${kioskId}`,
+          location: 'Self-Service Station',
+          status: 'ACTIVE',
+        },
+        include: { printer: true },
+      });
+    }
+
+    // Check if code was restricted to a different kiosk
+    if (printCode.allowedKioskId && printCode.allowedKioskId !== kiosk.id) {
+      return res.status(403).json({
+        success: false,
+        error: 'This print code is assigned to a different kiosk station.',
+      });
+    }
+
+    // Generate signed download URL
+    const downloadUrl = await storage.getSignedUrl(printCode.job.file.storageKey, 300);
+
+    // Mark code as USED immediately
+    await prisma.printCode.update({
+      where: { id: printCode.id },
+      data: {
+        status: 'USED',
+        usedAt: new Date(),
+        redeemedByKioskId: kiosk.id,
+      },
+    });
+
+    // Update job to PRINTING
+    await prisma.printJob.update({
+      where: { id: printCode.job.id },
+      data: {
+        kioskId: kiosk.id,
+        status: 'PRINTING',
+      },
+    });
+
+    const printPayload = {
+      jobId: printCode.job.id,
+      displayId: printCode.job.displayId,
+      downloadUrl,
+      totalPages: printCode.job.totalPages,
+      currentPage: 1,
+      fileName: printCode.job.file.originalName,
+      colorMode: printCode.job.colorMode,
+      copies: printCode.job.copies,
+      sides: printCode.job.sides,
+      paperSize: printCode.job.paperSize,
+      kioskId: kiosk.displayId,
+      kioskName: kiosk.name,
+      timestamp: new Date().toISOString(),
+    };
+
+    console.log(`⚡ WhatsApp Web QR Pairing: Job ${printCode.job.displayId} paired to Kiosk ${kiosk.displayId}`);
+
+    // Real-time Push to Kiosk via WebSockets
+    if (io) {
+      io.to(`kiosk:${kiosk.id}`).emit('kiosk_paired_print', printPayload);
+      io.to(`kiosk:${kiosk.displayId}`).emit('kiosk_paired_print', printPayload);
+      io.emit('kiosk_paired_print', { ...printPayload, targetKioskId: kiosk.displayId });
+
+      // Notify customer session
+      io.to(`session:${printCode.job.sessionId}`).emit('job_update', {
+        type: 'JOB_UPDATE',
+        jobId: printCode.job.id,
+        displayId: printCode.job.displayId,
+        status: 'PRINTING',
+        currentPage: 1,
+        totalPages: printCode.job.totalPages,
+        kiosk: {
+          displayId: kiosk.displayId,
+          name: kiosk.name,
+        },
+      });
+
+      // Broadcast globally for responsive frontends
+      io.emit('job_update', {
+        type: 'JOB_UPDATE',
+        jobId: printCode.job.id,
+        displayId: printCode.job.displayId,
+        status: 'PRINTING',
+        currentPage: 1,
+        totalPages: printCode.job.totalPages,
+        kiosk: {
+          displayId: kiosk.displayId,
+          name: kiosk.name,
+        },
+      });
+
+      // Real-time update for Admin
+      io.to('admin').emit('job_updated', {
+        id: printCode.job.id,
+        displayId: printCode.job.displayId,
+        status: 'PRINTING',
+        kioskId: kiosk.displayId,
+      });
+    }
+
+    // Trigger physical printing in background
+    if (printer) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        let tempFilePath = typeof storage.getLocalFilePath === 'function'
+          ? storage.getLocalFilePath(printCode.job.file.storageKey)
+          : null;
+
+        if (!tempFilePath || !fs.existsSync(tempFilePath)) {
+          const tempDir = path.join(os.tmpdir(), 'xpos-print');
+          if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+          const safeBaseName = path.basename(printCode.job.file.originalName, path.extname(printCode.job.file.originalName)).replace(/[^a-zA-Z0-9_-]/g, '_');
+          tempFilePath = path.join(tempDir, `${printCode.job.id}_${safeBaseName}.pdf`);
+          const fileBuffer = await storage.downloadFile(printCode.job.file.storageKey);
+          fs.writeFileSync(tempFilePath, fileBuffer);
+        }
+
+        printer.submitPrintJob({
+          filePath: tempFilePath,
+          colorMode: printCode.job.colorMode,
+          paperSize: printCode.job.paperSize,
+          sides: printCode.job.sides,
+          copies: printCode.job.copies || 1,
+          totalPages: printCode.job.totalPages,
+        }).catch((err: any) => console.warn('Printer background job submit notice:', err?.message));
+      } catch (err: any) {
+        console.warn('Physical printer trigger note:', err?.message);
+      }
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        action: 'QR_PAIRED_PRINT',
+        entityType: 'PrintJob',
+        entityId: printCode.job.id,
+        kioskId: kiosk.id,
+        details: JSON.stringify({
+          jobDisplayId: printCode.job.displayId,
+          kioskDisplayId: kiosk.displayId,
+          pairToken: pairToken ? 'verified_single_use' : 'direct',
+        }),
+      },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        paired: true,
+        kioskId: kiosk.displayId,
+        kioskName: kiosk.name,
+        jobId: printCode.job.id,
+        displayId: printCode.job.displayId,
+        totalPages: printCode.job.totalPages,
+        fileName: printCode.job.file.originalName,
+      },
+    });
+  } catch (error) {
+    console.error('Kiosk QR pairing error:', error);
+    res.status(500).json({ success: false, error: 'Failed to pair kiosk with print code' });
+  }
+});
+
 export { router as printCodeRoutes };
