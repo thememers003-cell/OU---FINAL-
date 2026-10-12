@@ -86,7 +86,7 @@ export default function KioskApp() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
 
-  // 🔒 Single-Use Dynamic QR Token for WhatsApp Web-style Pairing
+  // 🔒 Single-Use Dynamic QR Token for Instant Release Pairing
   const [pairToken, setPairToken] = useState<string>(() => {
     return 'XPOS-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '-' + Date.now().toString(36);
   });
@@ -96,6 +96,9 @@ export default function KioskApp() {
     setPairToken(newToken);
     console.log('🔄 Kiosk single-use QR refreshed:', newToken);
   }, []);
+
+  // 5-Second Auto Return Countdown for Upload Screen
+  const [qrCountdown, setQrCountdown] = useState(5);
 
   // Charming flirty quotes
   const [currentCharmingLine, setCurrentCharmingLine] = useState('');
@@ -108,6 +111,25 @@ export default function KioskApp() {
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── 5-Second Auto Return from Scan QR Upload Screen ──
+  useEffect(() => {
+    if (screen !== 'qr') return;
+    setQrCountdown(5);
+
+    const interval = setInterval(() => {
+      setQrCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setScreen('idle');
+          return 5;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [screen]);
 
   // ── Reset idle timer ──
   const resetIdleTimer = useCallback(() => {
@@ -152,9 +174,9 @@ export default function KioskApp() {
       setIsConnected(false);
     });
 
-    // ⚡ WhatsApp Web-Style Pairing Event from Customer Phone
+    // ⚡ Instant QR Pairing Event from Customer Phone
     socket.on('kiosk_paired_print', (data: any) => {
-      console.log('⚡ WhatsApp Web Real-Time Pairing Triggered:', data);
+      console.log('⚡ Real-Time QR Pairing Triggered:', data);
       if (data.kioskId && data.kioskId !== KIOSK_ID && data.targetKioskId && data.targetKioskId !== KIOSK_ID) {
         return;
       }
@@ -177,6 +199,15 @@ export default function KioskApp() {
       setIsVerifying(false);
       rotatePairToken(); // Single-use guarantee: Invalidate old QR immediately
       startPageProgressSimulation(totalPgs);
+
+      // Trigger physical print pipeline on backend/printer
+      if (data.jobId) {
+        fetch(`${getApiUrl()}/api/jobs/${data.jobId}/print`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kioskId: KIOSK_ID }),
+        }).catch((e) => console.warn('Kiosk print trigger notice:', e));
+      }
 
       // Simulate completion after printing
       setTimeout(() => {
@@ -477,7 +508,7 @@ export default function KioskApp() {
 
               {/* Action Cards Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl text-left items-stretch">
-                {/* ⚡ 1. WHATSAPP WEB STYLE INSTANT PRINT QR CARD */}
+                {/* ⚡ 1. INSTANT PRINT RELEASE QR CARD */}
                 <motion.div
                   whileHover={{ scale: 1.01 }}
                   className="bg-white p-6 md:p-7 rounded-[32px] border-2 border-blue-300 shadow-xl shadow-blue-500/10 flex flex-col items-center text-center justify-between space-y-4"
@@ -535,7 +566,7 @@ export default function KioskApp() {
 
                   <div className="w-full bg-blue-50 rounded-2xl py-2.5 px-3 border border-blue-200 flex items-center justify-center gap-2 text-xs font-bold text-blue-900">
                     <Zap className="w-4 h-4 text-blue-600 animate-pulse" />
-                    <span>WhatsApp Web Style • Zero Typing</span>
+                    <span>Instant QR Release • Zero Typing</span>
                   </div>
                 </motion.div>
 
@@ -608,17 +639,32 @@ export default function KioskApp() {
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
-              className="w-full max-w-md flex flex-col items-center text-center space-y-6"
+              className="w-full max-w-md flex flex-col items-center text-center space-y-5"
             >
               <div className="space-y-1">
                 <h2 className="text-3xl font-black text-slate-900">Scan QR with Phone</h2>
                 <p className="text-slate-600 text-sm font-medium">Point your camera to upload documents directly</p>
               </div>
 
+              {/* ⏱️ 5-Second Auto-Return Countdown Badge & Progress Bar */}
+              <div className="flex flex-col items-center gap-1.5 w-full">
+                <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 text-amber-900 px-4 py-1.5 rounded-full text-xs font-bold shadow-sm">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                  <span>Returning to Home in {qrCountdown}s</span>
+                </div>
+                <div className="w-48 h-1.5 bg-slate-200 rounded-full overflow-hidden mt-0.5">
+                  <motion.div
+                    animate={{ width: `${(qrCountdown / 5) * 100}%` }}
+                    transition={{ duration: 0.3 }}
+                    className="h-full bg-blue-600 rounded-full"
+                  />
+                </div>
+              </div>
+
               <div className="p-6 bg-white rounded-3xl border-2 border-blue-200 shadow-2xl shadow-blue-500/10">
                 <QRCodeSVG
                   value={`${getAppUrl()}/remote?kiosk=${KIOSK_ID}`}
-                  size={240}
+                  size={230}
                   level="H"
                   includeMargin={true}
                   imageSettings={{
@@ -643,7 +689,7 @@ export default function KioskApp() {
                 }}
                 className="py-3 px-6 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center gap-2 transition-all active:scale-95"
               >
-                <ArrowLeft className="w-4 h-4" /> Back to Home
+                <ArrowLeft className="w-4 h-4" /> Back to Home Now
               </button>
             </motion.div>
           )}

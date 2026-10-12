@@ -47,7 +47,7 @@ function CodeContent() {
   const [jobStatus, setJobStatus] = useState<string>('QUEUED');
   const [printedKiosk, setPrintedKiosk] = useState<string | null>(null);
 
-  // Scanner state (WhatsApp Web-Style Pairing)
+  // Scanner state (Instant Release Pairing)
   const [showScanner, setShowScanner] = useState(false);
   const [isPairing, setIsPairing] = useState(false);
   const [pairingStatus, setPairingStatus] = useState('');
@@ -77,7 +77,7 @@ function CodeContent() {
     handlePairWithKiosk(pairKioskParam, pairTokenParam || undefined);
   }, [code, pairKioskParam, pairTokenParam, jobStatus]);
 
-  // ── Core Kiosk Pairing Handler (WhatsApp Web Style) ──
+  // ── Core Kiosk Pairing Handler ──
   const handlePairWithKiosk = async (targetKioskId: string, pairToken?: string) => {
     if (!targetKioskId || isPairing) return;
     setIsPairing(true);
@@ -162,6 +162,30 @@ function CodeContent() {
     handlePairWithKiosk(extractedKioskId, extractedToken);
   }, [isPairing, code, resolvedJobId]);
 
+  // ── Explicit Camera Request for Mobile Browsers ──
+  const handleOpenScanner = async () => {
+    playKeySound('tap');
+    setScannerError('');
+    setShowScanner(true);
+    setPairingStatus('Requesting camera access...');
+
+    // On mobile devices (iOS Safari / Android Chrome), explicitly request camera permission on user gesture
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        });
+        // Stop the probe stream so Html5Qrcode can bind immediately
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err: any) {
+        console.warn('Native mobile camera prompt response:', err);
+        if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+          setScannerError('Camera access was denied. Please allow camera in your browser settings or type Station ID below.');
+        }
+      }
+    }
+  };
+
   // ── Camera Scanner Lifecycle using Html5Qrcode ──
   useEffect(() => {
     if (!showScanner) {
@@ -179,7 +203,7 @@ function CodeContent() {
     async function initScanner() {
       try {
         setScannerError('');
-        setPairingStatus('Opening camera...');
+        setPairingStatus('Opening camera feed...');
         const { Html5Qrcode } = await import('html5-qrcode');
 
         if (isCancelled) return;
@@ -189,13 +213,16 @@ function CodeContent() {
         html5QrCodeRef.current = scanner;
 
         const config = {
-          fps: 15,
-          qrbox: { width: 250, height: 250 },
+          fps: 20,
+          qrbox: { width: 230, height: 230 },
           aspectRatio: 1.0,
         };
 
         const successCallback = (decodedText: string) => {
           if (!isCancelled) {
+            if (typeof navigator !== 'undefined' && navigator.vibrate) {
+              navigator.vibrate([40, 40, 80]);
+            }
             handleQrScanned(decodedText);
           }
         };
@@ -203,7 +230,7 @@ function CodeContent() {
         // Try environment camera first
         try {
           await scanner.start(
-            { facingMode: 'environment' },
+            { facingMode: { ideal: 'environment' } },
             config,
             successCallback,
             () => {}
@@ -222,7 +249,7 @@ function CodeContent() {
       } catch (err: any) {
         console.warn('Scanner camera error:', err);
         if (!isCancelled) {
-          setScannerError('Camera access required. Please grant permission or type Station ID below.');
+          setScannerError('Camera access required. Please tap "Enable Camera" or type Station ID below.');
         }
       }
     }
@@ -725,7 +752,7 @@ function CodeContent() {
             </div>
 
             {/* ════════════════════════════════════════════════ */}
-            {/* ⚡ 1. WHATSAPP WEB STYLE SCAN KIOSK QR BUTTON */}
+            {/* ⚡ 1. POINT & PRINT INSTANT SCAN BUTTON */}
             {/* ════════════════════════════════════════════════ */}
             <div className="relative">
               <div className="flex items-center gap-2 my-2 justify-center">
@@ -738,11 +765,7 @@ function CodeContent() {
                 type="button"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  playKeySound('tap');
-                  setScannerError('');
-                  setShowScanner(true);
-                }}
+                onClick={handleOpenScanner}
                 className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm md:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-blue-500/25 border-2 border-blue-400 transition-all group"
                 id="btn-scan-kiosk-qr"
               >
@@ -755,7 +778,7 @@ function CodeContent() {
                 </span>
               </motion.button>
               <p className="text-[11px] text-slate-500 text-center mt-1.5 font-medium">
-                ⚡ WhatsApp Web style — point your phone camera at the kiosk screen
+                ⚡ Point & Print — scan the kiosk screen QR to release your print in 1 second
               </p>
             </div>
 
@@ -779,7 +802,7 @@ function CodeContent() {
       </div>
 
       {/* ════════════════════════════════════════════════ */}
-      {/* 📷 WHATSAPP WEB STYLE CAMERA QR SCANNER MODAL */}
+      {/* 📷 ADVANCED HIGH-TECH QR CAMERA SCANNER MODAL */}
       {/* ════════════════════════════════════════════════ */}
       <AnimatePresence>
         {showScanner && (
@@ -803,7 +826,7 @@ function CodeContent() {
                   </div>
                   <div className="text-left">
                     <h3 className="font-black text-slate-900 text-sm">Scan Kiosk QR Code</h3>
-                    <p className="text-[10px] text-slate-500 font-semibold">WhatsApp Web Style Pairing</p>
+                    <p className="text-[10px] text-slate-500 font-semibold">Instant Device Pairing</p>
                   </div>
                 </div>
 
@@ -822,26 +845,40 @@ function CodeContent() {
 
               {/* Viewfinder Area */}
               <div className="p-5 flex flex-col items-center">
-                <div className="relative w-64 h-64 rounded-3xl overflow-hidden bg-slate-900 shadow-inner border-2 border-blue-500">
+                <div className="relative w-64 h-64 rounded-3xl overflow-hidden bg-slate-900 shadow-inner border-2 border-cyan-400 shadow-[0_0_20px_rgba(56,189,248,0.25)]">
                   {/* Container for html5-qrcode video */}
                   <div id="kiosk-qr-scanner-box" className="w-full h-full" />
 
-                  {/* Corner Target Highlights */}
-                  <div className="absolute top-3 left-3 w-6 h-6 border-t-4 border-l-4 border-blue-400 rounded-tl-lg pointer-events-none" />
-                  <div className="absolute top-3 right-3 w-6 h-6 border-t-4 border-r-4 border-blue-400 rounded-tr-lg pointer-events-none" />
-                  <div className="absolute bottom-3 left-3 w-6 h-6 border-b-4 border-l-4 border-blue-400 rounded-bl-lg pointer-events-none" />
-                  <div className="absolute bottom-3 right-3 w-6 h-6 border-b-4 border-r-4 border-blue-400 rounded-br-lg pointer-events-none" />
+                  {/* Top Holographic Live Scanning Pill */}
+                  <div className="absolute top-2.5 left-1/2 -translate-x-1/2 bg-slate-950/85 backdrop-blur-md px-3 py-0.5 rounded-full border border-cyan-400/50 text-[9px] font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5 shadow-lg pointer-events-none z-20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    <span>POINT AT KIOSK QR</span>
+                  </div>
 
-                  {/* Animated Glowing Laser Line */}
+                  {/* Holographic Radar Pulse Animation in Background */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+                    <div className="w-40 h-40 rounded-full border border-cyan-400 animate-ping" />
+                    <div className="w-24 h-24 rounded-full border border-cyan-300" />
+                  </div>
+
+                  {/* Corner Target Highlights */}
+                  <div className="absolute top-3 left-3 w-7 h-7 border-t-4 border-l-4 border-cyan-400 rounded-tl-xl pointer-events-none z-10" />
+                  <div className="absolute top-3 right-3 w-7 h-7 border-t-4 border-r-4 border-cyan-400 rounded-tr-xl pointer-events-none z-10" />
+                  <div className="absolute bottom-3 left-3 w-7 h-7 border-b-4 border-l-4 border-cyan-400 rounded-bl-xl pointer-events-none z-10" />
+                  <div className="absolute bottom-3 right-3 w-7 h-7 border-b-4 border-r-4 border-cyan-400 rounded-br-xl pointer-events-none z-10" />
+
+                  {/* Animated Glowing Laser Sweep Line */}
                   <motion.div
                     animate={{ y: [0, 220, 0] }}
-                    transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-                    className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#38bdf8] pointer-events-none"
-                  />
+                    transition={{ duration: 2.0, repeat: Infinity, ease: 'easeInOut' }}
+                    className="absolute left-3 right-3 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_16px_#22d3ee,0_0_24px_#38bdf8] pointer-events-none z-10 rounded-full"
+                  >
+                    <div className="w-full h-10 -mt-5 bg-gradient-to-b from-cyan-400/20 to-transparent blur-sm pointer-events-none" />
+                  </motion.div>
 
                   {/* Pairing Active Overlay */}
                   {isPairing && (
-                    <div className="absolute inset-0 bg-blue-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4">
+                    <div className="absolute inset-0 bg-blue-950/85 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 z-30">
                       <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mb-3" />
                       <p className="font-black text-sm">{pairingStatus}</p>
                     </div>
@@ -850,9 +887,20 @@ function CodeContent() {
 
                 {/* Status or Error Banner */}
                 {scannerError ? (
-                  <div className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold text-center">
-                    <AlertCircle className="w-4 h-4 inline-block mr-1 text-rose-500" />
-                    <span>{scannerError}</span>
+                  <div className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold text-center w-full">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <AlertCircle className="w-4 h-4 text-rose-500" />
+                      <span>{scannerError}</span>
+                    </div>
+                    {/* Grant Camera Permission Quick Trigger */}
+                    <button
+                      type="button"
+                      onClick={handleOpenScanner}
+                      className="mt-2 py-1.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs inline-flex items-center gap-1 shadow-sm active:scale-95 transition-all"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Tap to Request Camera</span>
+                    </button>
                   </div>
                 ) : (
                   <p className="mt-3 text-xs font-semibold text-slate-600">

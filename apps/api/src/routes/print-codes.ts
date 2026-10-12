@@ -365,7 +365,7 @@ router.post('/verify', async (req: Request, res: Response) => {
 // Single-use pair tokens tracker (in-memory with cleanup)
 const usedPairTokens = new Set<string>();
 
-// ── WhatsApp Web-Style Real-time Kiosk Pairing Endpoint ──
+// ── Instant Real-time Kiosk Pairing Endpoint (Single-Use QR) ──
 // Customer phone scans the single-use QR code displayed on the Kiosk
 router.post('/pair-kiosk', async (req: Request, res: Response) => {
   try {
@@ -534,7 +534,7 @@ router.post('/pair-kiosk', async (req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     };
 
-    console.log(`⚡ WhatsApp Web QR Pairing: Job ${printCode.job.displayId} paired to Kiosk ${kiosk.displayId}`);
+    console.log(`⚡ Instant QR Pairing: Job ${printCode.job.displayId} paired to Kiosk ${kiosk.displayId}`);
 
     // Real-time Push to Kiosk via WebSockets
     if (io) {

@@ -300,7 +300,7 @@ router.post('/:id/print', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
 
-    if (job.status !== 'SENDING' && job.status !== 'QUEUED' && job.status !== 'PAID') {
+    if (job.status !== 'SENDING' && job.status !== 'QUEUED' && job.status !== 'PAID' && job.status !== 'PRINTING') {
       return res.status(400).json({ success: false, error: `Cannot print job in status: ${job.status}` });
     }
 
