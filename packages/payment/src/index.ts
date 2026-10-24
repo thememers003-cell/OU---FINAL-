@@ -100,15 +100,14 @@ export { PhonePePaymentProvider };
 
 // ── Factory ──
 export function createPaymentProvider(): PaymentProvider {
-  const provider = (process.env.PAYMENT_PROVIDER || 'mock').toLowerCase();
+  const provider = (process.env.PAYMENT_PROVIDER || 'phonepe').toLowerCase();
   switch (provider) {
     case 'phonepe':
       return new PhonePePaymentProvider();
     case 'mock':
       return new MockPaymentProvider();
     default:
-      console.warn(`Unknown payment provider: ${provider}, falling back to mock`);
-      return new MockPaymentProvider();
+      return new PhonePePaymentProvider();
   }
 }
 

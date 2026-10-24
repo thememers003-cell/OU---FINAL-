@@ -19,6 +19,16 @@ services:
         value: local
       - key: PRINT_CODE_EXPIRY_MINUTES
         value: 1440
+      - key: PAYMENT_PROVIDER
+        value: phonepe
+      - key: PHONEPE_MERCHANT_ID
+        value: M236NFVVSAXD2
+      - key: PHONEPE_CLIENT_ID
+        value: SU2610191744120003675634
+      - key: PHONEPE_CLIENT_SECRET
+        value: 51d26195-be6f-47ee-949a-297591229cce
+      - key: PHONEPE_ENV
+        value: production
 
   # 2. Customer-Facing Mobile Web App (Next.js)
   - type: web

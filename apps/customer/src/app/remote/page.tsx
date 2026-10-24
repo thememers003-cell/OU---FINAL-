@@ -26,7 +26,7 @@ import {
   Zap,
   Check
 } from 'lucide-react';
-import { createSession, uploadFile, calculatePrice, getKiosks, getPricing, createJob } from '../../lib/api';
+import { createSession, uploadFile, calculatePrice, getKiosks, getPricing, createJob, createPayment } from '../../lib/api';
 import { renderPdfPages } from '../../lib/pdf-preview';
 import { playKeySound } from '../../lib/sound';
 
@@ -409,7 +409,19 @@ function RemotePrintContent() {
         return;
       }
 
-      // Navigate to payment
+      // Create PhonePe payment directly and navigate immediately to PhonePe PG
+      try {
+        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+        const payRes = await createPayment(jobRes.data.id, `${currentOrigin}/payment`);
+        if (payRes.success && payRes.data?.redirectUrl) {
+          window.location.href = payRes.data.redirectUrl;
+          return;
+        }
+      } catch (payErr) {
+        console.warn('Direct PhonePe redirection fallback:', payErr);
+      }
+
+      // Fallback to /payment page
       router.push(`/payment?jobId=${jobRes.data.id}&displayId=${jobRes.data.displayId}&amount=${totalAmount}&method=CODE`);
     } catch (err: any) {
       playKeySound('error');
