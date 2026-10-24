@@ -84,9 +84,32 @@ router.post('/create', async (req: Request, res: Response) => {
         expiresAt: order.expiresAt,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Payment creation error:', error);
-    res.status(500).json({ success: false, error: 'Failed to create payment' });
+    res.status(500).json({
+      success: false,
+      error: error?.message || 'Failed to create payment',
+      details: String(error?.stack || error),
+    });
+  }
+});
+
+// Diagnostic route
+router.get('/diagnose', async (req: Request, res: Response) => {
+  try {
+    const payment = req.app.locals.payment;
+    res.json({
+      success: true,
+      providerName: payment?.name || 'none',
+      envProvider: process.env.PAYMENT_PROVIDER,
+      hasMerchantId: !!process.env.PHONEPE_MERCHANT_ID,
+      hasClientId: !!process.env.PHONEPE_CLIENT_ID,
+      hasClientSecret: !!process.env.PHONEPE_CLIENT_SECRET,
+      phonepeEnv: process.env.PHONEPE_ENV || 'production',
+      nodeEnv: process.env.NODE_ENV,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || String(err) });
   }
 });
 

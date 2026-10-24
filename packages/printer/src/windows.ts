@@ -34,7 +34,8 @@ export class WindowsPrinterService extends EventEmitter implements PrinterServic
    */
   async getPrinters(): Promise<PrinterInfo[]> {
     try {
-      const ptp = await import('pdf-to-printer');
+      const ptpModule = await import('pdf-to-printer');
+      const ptp = (ptpModule as any).default || ptpModule;
       const printers = await ptp.getPrinters();
       const defaultP = await ptp.getDefaultPrinter();
 
