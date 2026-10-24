@@ -101,6 +101,8 @@ router.get('/diagnose', async (req: Request, res: Response) => {
     res.json({
       success: true,
       providerName: payment?.name || 'none',
+      isProduction: payment?.isProduction,
+      oauthUrl: payment?.oauthUrl,
       envProvider: process.env.PAYMENT_PROVIDER,
       hasMerchantId: !!process.env.PHONEPE_MERCHANT_ID,
       hasClientId: !!process.env.PHONEPE_CLIENT_ID,

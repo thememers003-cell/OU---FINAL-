@@ -18,9 +18,9 @@ export class PhonePePaymentProvider implements PaymentProvider {
   private merchantId: string;
   private clientId: string;
   private clientSecret: string;
-  private isProduction: boolean;
-  private baseUrl: string;
-  private oauthUrl: string;
+  public isProduction: boolean;
+  public baseUrl: string;
+  public oauthUrl: string;
 
   private tokenCache: CachedToken | null = null;
 
@@ -28,7 +28,8 @@ export class PhonePePaymentProvider implements PaymentProvider {
     this.merchantId = process.env.PHONEPE_MERCHANT_ID || 'M236NFVVSAXD2';
     this.clientId = process.env.PHONEPE_CLIENT_ID || 'SU2610191744120003675634';
     this.clientSecret = process.env.PHONEPE_CLIENT_SECRET || '51d26195-be6f-47ee-949a-297591229cce';
-    this.isProduction = (process.env.PHONEPE_ENV || 'production').toLowerCase() === 'production';
+    const env = (process.env.PHONEPE_ENV || 'production').toLowerCase().trim();
+    this.isProduction = !['sandbox', 'preprod', 'pre-prod', 'test', 'uat', 'dev', 'development'].includes(env);
 
     if (this.isProduction) {
       this.baseUrl = 'https://api.phonepe.com';
@@ -37,6 +38,7 @@ export class PhonePePaymentProvider implements PaymentProvider {
       this.baseUrl = 'https://api-preprod.phonepe.com';
       this.oauthUrl = 'https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token';
     }
+    console.log(`[PhonePe] Initialized in ${this.isProduction ? 'PRODUCTION' : 'SANDBOX'} mode (env=${env}, oauthUrl=${this.oauthUrl})`);
   }
 
   /**
