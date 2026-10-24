@@ -179,6 +179,7 @@ export interface PaymentOrder {
   qrData?: string;
   upiLink?: string;
   expiresAt: string;
+  redirectUrl?: string;
 }
 
 export interface PaymentVerification {

@@ -79,6 +79,7 @@ router.post('/create', async (req: Request, res: Response) => {
         currency: order.currency,
         qrData: order.qrData,
         upiLink: order.upiLink,
+        redirectUrl: order.redirectUrl || order.qrData,
         expiresAt: order.expiresAt,
       },
     });
@@ -88,17 +89,35 @@ router.post('/create', async (req: Request, res: Response) => {
   }
 });
 
+// Optional callback route when returning from hosted payment gateway
+router.all('/callback', async (req: Request, res: Response) => {
+  const query = req.query;
+  const body = req.body;
+  const jobId = (query.jobId || body?.jobId || '') as string;
+  const displayId = (query.displayId || body?.displayId || '') as string;
+  const orderId = (query.orderId || body?.orderId || '') as string;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+  return res.redirect(`${appUrl}/payment?jobId=${jobId}&displayId=${displayId}&orderId=${orderId}&callback=true`);
+});
+
 // Verify payment
 router.post('/verify', async (req: Request, res: Response) => {
   try {
     const prisma = req.app.locals.prisma;
     const paymentProvider = req.app.locals.payment;
     const io = req.app.locals.io;
-    const { paymentId, orderId, paymentData } = req.body;
+    const { paymentId, orderId, jobId, paymentData } = req.body;
 
     // Find payment record
     const paymentRecord = await prisma.payment.findFirst({
-      where: paymentId ? { id: paymentId } : { providerOrderId: orderId },
+      where: paymentId
+        ? { id: paymentId }
+        : orderId
+        ? { providerOrderId: orderId }
+        : jobId
+        ? { jobId }
+        : { id: '__non_existent__' },
       include: { job: true },
     });
 

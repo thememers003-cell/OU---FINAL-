@@ -94,16 +94,21 @@ export class MockPaymentProvider implements PaymentProvider {
   }
 }
 
+import { PhonePePaymentProvider } from './phonepe';
+
+export { PhonePePaymentProvider };
+
 // ── Factory ──
 export function createPaymentProvider(): PaymentProvider {
-  const provider = process.env.PAYMENT_PROVIDER || 'mock';
+  const provider = (process.env.PAYMENT_PROVIDER || 'mock').toLowerCase();
   switch (provider) {
+    case 'phonepe':
+      return new PhonePePaymentProvider();
     case 'mock':
       return new MockPaymentProvider();
-    // Future: case 'razorpay': return new RazorpayProvider();
-    // Future: case 'cashfree': return new CashfreeProvider();
     default:
       console.warn(`Unknown payment provider: ${provider}, falling back to mock`);
       return new MockPaymentProvider();
   }
 }
+
