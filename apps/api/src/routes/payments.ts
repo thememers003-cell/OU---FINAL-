@@ -11,7 +11,7 @@ router.post('/create', async (req: Request, res: Response) => {
   try {
     const prisma = req.app.locals.prisma;
     const payment = req.app.locals.payment;
-    const { jobId } = req.body;
+    const { jobId, returnUrl } = req.body;
 
     if (!jobId) {
       return res.status(400).json({ success: false, error: 'Job ID required' });
@@ -42,6 +42,7 @@ router.post('/create', async (req: Request, res: Response) => {
     const order = await payment.createOrder(job.totalPrice, 'INR', {
       jobId: job.id,
       displayId: job.displayId,
+      returnUrl: returnUrl || '',
     });
 
     // Store or update payment record idempotently

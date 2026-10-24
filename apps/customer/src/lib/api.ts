@@ -140,10 +140,10 @@ export async function getJob(jobId: string) {
 }
 
 // ── Payments ──
-export async function createPayment(jobId: string) {
+export async function createPayment(jobId: string, returnUrl?: string) {
   return apiRequest<any>('/api/payments/create', {
     method: 'POST',
-    body: JSON.stringify({ jobId }),
+    body: JSON.stringify({ jobId, returnUrl }),
   });
 }
 

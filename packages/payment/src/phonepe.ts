@@ -105,8 +105,23 @@ export class PhonePePaymentProvider implements PaymentProvider {
     // Convert amount to paise (1 INR = 100 paise)
     const amountInPaise = Math.round(amount * 100);
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.API_URL || 'http://localhost:3000';
-    const redirectUrl = `${appUrl}/payment?jobId=${metadata.jobId || ''}&displayId=${metadata.displayId || ''}&orderId=${merchantOrderId}&callback=true`;
+    const appUrl = (metadata.returnUrl && metadata.returnUrl.startsWith('http'))
+      ? metadata.returnUrl
+      : (process.env.NEXT_PUBLIC_APP_URL || process.env.API_URL || 'http://localhost:3000');
+
+    let redirectUrl = `${appUrl}/payment?jobId=${metadata.jobId || ''}&displayId=${metadata.displayId || ''}&orderId=${merchantOrderId}&callback=true`;
+    if (metadata.returnUrl && metadata.returnUrl.startsWith('http')) {
+      try {
+        const u = new URL(metadata.returnUrl);
+        u.searchParams.set('jobId', metadata.jobId || '');
+        u.searchParams.set('displayId', metadata.displayId || '');
+        u.searchParams.set('orderId', merchantOrderId);
+        u.searchParams.set('callback', 'true');
+        redirectUrl = u.toString();
+      } catch {
+        // fallback to standard
+      }
+    }
 
     const payload = {
       merchantOrderId,

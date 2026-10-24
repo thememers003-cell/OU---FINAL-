@@ -80,7 +80,8 @@ function PaymentContent() {
       }
 
       // Create or fetch payment order
-      const res = await createPayment(jobId);
+      const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+      const res = await createPayment(jobId, `${currentOrigin}/payment`);
       if (res.success) {
         const orderInfo = res.data;
         setPaymentData(orderInfo);
@@ -88,6 +89,12 @@ function PaymentContent() {
         // If already paid
         if (orderInfo.status === 'PAID') {
           handleSuccessRedirect();
+          return;
+        }
+
+        // Automatically redirect to PhonePe Payment Gateway
+        if (!isCallback && orderInfo.redirectUrl) {
+          window.location.href = orderInfo.redirectUrl;
           return;
         }
 
