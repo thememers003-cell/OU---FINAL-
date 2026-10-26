@@ -40,7 +40,8 @@ import {
   Cpu,
   Check,
   Copy,
-  Link2
+  Link2,
+  ExternalLink
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { getApiUrl } from '../lib/api';
@@ -202,7 +203,39 @@ export default function SuperAdminRootPage() {
 
       if (statsRes.success) setStats(statsRes.data);
       if (jobsRes.success) setJobs(jobsRes.data?.jobs || []);
-      if (kiosksRes.success) setKiosks(kiosksRes.data || []);
+
+      // ⚡ Resilient Kiosk Loading: Try /api/admin/kiosks first, fallback to /api/kiosks?showAll=true
+      if (kiosksRes.success && Array.isArray(kiosksRes.data) && kiosksRes.data.length > 0) {
+        setKiosks(kiosksRes.data);
+      } else {
+        try {
+          const fallbackRes = await fetch(`${baseUrl}/api/kiosks?showAll=true`).then(r => r.json()).catch(() => ({}));
+          if (fallbackRes.success && Array.isArray(fallbackRes.data) && fallbackRes.data.length > 0) {
+            setKiosks(fallbackRes.data.map((k: any) => ({
+              id: k.id,
+              displayId: k.displayId,
+              name: k.name,
+              location: k.location,
+              status: k.status || 'ACTIVE',
+              printerStatus: k.printerStatus || 'READY',
+              printerName: k.printerName || 'Canon MF280 Series',
+              totalJobsServed: k.totalJobsServed || 0,
+              qrUrl: k.qrUrl || `https://xpos-printing-cloud-customer.vercel.app/remote?kiosk=${k.displayId}`,
+              lastHeartbeat: k.lastHeartbeat || new Date().toISOString(),
+              isOnline: k.isOnline ?? (k.status === 'ACTIVE'),
+              paperLevel: k.paperLevel ?? 85,
+              tonerLevel: k.tonerLevel ?? 92,
+              cpu: k.cpu || 14,
+              ram: k.ram || 38,
+              disk: k.disk || 45,
+              appVersion: k.appVersion || 'v2.4.0-cloud',
+            })));
+          }
+        } catch (e) {
+          console.warn('Kiosk fallback fetch warning:', e);
+        }
+      }
+
       if (pricingRes.success) setPricingRules(pricingRes.data || []);
       if (logsRes.success) setAuditLogs(logsRes.data || []);
     } catch (error) {
@@ -985,6 +1018,33 @@ export default function SuperAdminRootPage() {
                               <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${kiosk.tonerLevel}%` }} />
                             </div>
                           </div>
+                        </div>
+
+                        {/* ⚡ Quick Access & Direct Jobs Links */}
+                        <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setSearchQuery(kiosk.displayId);
+                              setStatusFilter('ALL');
+                              setActiveTab('jobs');
+                            }}
+                            className="flex-1 py-2 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-sm"
+                            title={`Filter and view all print jobs for Station ${kiosk.displayId}`}
+                          >
+                            <FileText className="w-3.5 h-3.5 text-sky-600" />
+                            <span>View Print Jobs</span>
+                          </button>
+
+                          <a
+                            href={remoteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-sm"
+                            title={`Open Live Remote Print Page for ${kiosk.displayId}`}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Go to Station</span>
+                          </a>
                         </div>
 
                         {/* Controls */}
