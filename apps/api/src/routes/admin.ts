@@ -418,10 +418,12 @@ router.get('/kiosks', async (req: Request, res: Response) => {
     const kiosks = await prisma.kiosk.findMany({
       include: {
         printer: true,
-        _count: { select: { jobs: true } },
+        _count: { select: { printJobs: true } },
       },
       orderBy: { displayId: 'asc' },
     });
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://xpos-printing-cloud-customer.vercel.app';
 
     res.json({
       success: true,
@@ -433,7 +435,8 @@ router.get('/kiosks', async (req: Request, res: Response) => {
         status: k.status,
         printerStatus: k.printer?.status || 'READY',
         printerName: k.printer?.name || 'Canon MF280 Series',
-        totalJobsServed: k._count?.jobs || 0,
+        totalJobsServed: k._count?.printJobs || 0,
+        qrUrl: k.qrUrl || `${appUrl}/remote?kiosk=${k.displayId}`,
         lastHeartbeat: k.lastHeartbeat?.toISOString() || new Date().toISOString(),
         isOnline: k.status === 'ACTIVE',
         paperLevel: k.paperLevel ?? 85,
