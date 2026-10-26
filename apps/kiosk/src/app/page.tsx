@@ -28,36 +28,38 @@ import { playKeySound } from '../lib/sound';
 
 function getApiUrl(): string {
   if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const apiParam = params.get('api');
+    if (apiParam) return apiParam;
+
     const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:4000';
-    }
-    if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(hostname)) {
-      return `http://${hostname}:4000`;
-    }
     if (hostname.includes('loca.lt')) {
       return 'https://xpos-api-cloud.loca.lt';
     }
-    // Any public domain (riseupsolutions.in, vercel.app, onrender.com, etc.)
-    return process.env.NEXT_PUBLIC_API_URL || 'https://xpos-printing-cloud.onrender.com';
   }
-  return process.env.NEXT_PUBLIC_API_URL || 'https://xpos-printing-cloud.onrender.com';
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl && !envUrl.includes('192.168.') && !envUrl.includes('localhost')) {
+    return envUrl;
+  }
+  return 'https://xpos-printing-cloud.onrender.com';
 }
 
 function getAppUrl(): string {
   if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const appParam = params.get('app');
+    if (appParam) return appParam;
+
     const hostname = window.location.hostname;
     if (hostname.includes('loca.lt')) {
       return 'https://xpos-print-customer.loca.lt';
     }
-    if (hostname.includes('vercel.app') || hostname.includes('onrender.com')) {
-      return 'https://xpos-printing-cloud-customer.vercel.app';
-    }
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      return `http://${hostname}:3000`;
-    }
   }
-  return process.env.NEXT_PUBLIC_APP_URL || 'https://xpos-printing-cloud-customer.vercel.app';
+  const envApp = process.env.NEXT_PUBLIC_APP_URL;
+  if (envApp && !envApp.includes('192.168.') && !envApp.includes('localhost')) {
+    return envApp;
+  }
+  return 'https://xpos-printing-cloud-customer.vercel.app';
 }
 
 const DEFAULT_KIOSK_ID = process.env.NEXT_PUBLIC_KIOSK_ID || 'XPOS-001';
@@ -165,7 +167,16 @@ export default function KioskApp() {
 
   // ── WebSocket connection ──
   useEffect(() => {
-    const socket = io(getApiUrl(), { transports: ['websocket', 'polling'] });
+    const apiUrl = getApiUrl();
+    console.log(`🔌 Initializing Kiosk connection to backend: ${apiUrl}`);
+    const socket = io(apiUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 15000,
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
@@ -174,8 +185,13 @@ export default function KioskApp() {
       socket.emit('join_kiosk', { kioskId });
     });
 
-    socket.on('disconnect', () => {
-      console.log('❌ Kiosk disconnected from XPOS Cloud');
+    socket.on('disconnect', (reason) => {
+      console.log('❌ Kiosk disconnected from XPOS Cloud:', reason);
+      setIsConnected(false);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('⚠️ Kiosk socket connect_error, retrying:', err.message);
       setIsConnected(false);
     });
 
