@@ -86,6 +86,7 @@ export function setupWebSocket(io: SocketIOServer, prisma: PrismaClient): void {
 
         if (kiosk) {
           socket.join(`kiosk:${kiosk.id}`);
+          socket.join(`kiosk:${kiosk.displayId}`);
           socket.data.kioskId = kiosk.id;
           socket.data.kioskDisplayId = kiosk.displayId;
           console.log(`🖥️  Kiosk joined: ${kiosk.displayId}`);

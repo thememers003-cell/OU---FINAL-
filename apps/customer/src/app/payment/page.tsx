@@ -13,7 +13,8 @@ function PaymentContent() {
   const jobId = searchParams.get('jobId');
   const displayId = searchParams.get('displayId');
   const amount = searchParams.get('amount');
-  const method = searchParams.get('method') || 'CODE';
+  const method = searchParams.get('method') || 'QR';
+  const kioskParam = searchParams.get('kiosk') || '';
   const isCallback = searchParams.get('callback') === 'true';
   const paramOrderId = searchParams.get('orderId');
 
@@ -28,13 +29,9 @@ function PaymentContent() {
     setStatus('success');
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     setTimeout(() => {
-      if (method === 'QR') {
-        router.push(`/job/${jobId}?displayId=${displayId}`);
-      } else {
-        router.push(`/code?jobId=${jobId}&displayId=${displayId}`);
-      }
+      router.push(`/remote?jobId=${jobId}&displayId=${displayId}&kiosk=${kioskParam}&paid=true`);
     }, 1200);
-  }, [jobId, displayId, method, router]);
+  }, [jobId, displayId, kioskParam, router]);
 
   // Check payment status helper
   const checkStatus = useCallback(async (paymentId?: string, orderId?: string) => {

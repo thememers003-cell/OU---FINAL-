@@ -76,6 +76,12 @@ router.post('/', async (req: Request, res: Response) => {
       include: { printer: true },
     });
 
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('kiosks_updated', { type: 'KIOSK_ADDED', kiosk });
+      io.to('admin').emit('kiosk_added', kiosk);
+    }
+
     res.json({
       success: true,
       data: {

@@ -4,7 +4,7 @@ import { useState, useEffect, use, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CheckCircle2, Loader2, Printer, Send, FileText, XCircle } from 'lucide-react';
-import { getJob } from '../../../lib/api';
+import { getJob, triggerPrintJob } from '../../../lib/api';
 import { connectSocket, joinSession } from '../../../lib/socket';
 
 function JobStatusContent({ params }: { params: { id: string } | Promise<{ id: string }> }) {
@@ -174,6 +174,21 @@ function JobStatusContent({ params }: { params: { id: string } | Promise<{ id: s
               <span className={statusInfo.color}>{statusInfo.label}</span>
             </div>
           </div>
+
+          {/* Instant Print Now Button */}
+          {!isComplete && !isPrinting && (job.status === 'PAID' || job.status === 'QUEUED' || job.payment?.status === 'SUCCESS') && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={async () => {
+                await triggerPrintJob(job.id, job.kiosk?.displayId || job.kioskId);
+                setJob((prev: any) => ({ ...prev, status: 'PRINTING' }));
+              }}
+              className="btn-primary w-full mt-6 py-4 text-base font-black flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20"
+            >
+              <Printer className="w-5 h-5" /> PRINT NOW
+            </motion.button>
+          )}
 
           {isComplete && (
             <button onClick={() => router.push('/')} className="btn-primary w-full mt-6">

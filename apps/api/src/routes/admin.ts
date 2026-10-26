@@ -469,6 +469,22 @@ router.post('/kiosks', async (req: Request, res: Response) => {
       },
     });
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const qrUrl = `${appUrl}/remote?kiosk=${kiosk.displayId}`;
+
+    // Update with QR URL
+    await prisma.kiosk.update({
+      where: { id: kiosk.id },
+      data: { qrUrl },
+    });
+    kiosk.qrUrl = qrUrl;
+
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('kiosks_updated', { type: 'KIOSK_ADDED', kiosk });
+      io.to('admin').emit('kiosk_added', kiosk);
+    }
+
     res.json({ success: true, message: `Kiosk ${kiosk.displayId} created`, data: kiosk });
   } catch (error: any) {
     console.error('Create kiosk error:', error);
@@ -487,6 +503,11 @@ router.patch('/kiosks/:id/status', async (req: Request, res: Response) => {
       where: { id },
       data: { status },
     });
+
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('kiosks_updated', { type: 'KIOSK_UPDATED', kiosk });
+    }
 
     res.json({ success: true, message: `Kiosk ${kiosk.displayId} status changed to ${status}`, data: kiosk });
   } catch (error) {

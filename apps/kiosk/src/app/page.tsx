@@ -60,10 +60,10 @@ function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL || 'https://xpos-printing-cloud-customer.vercel.app';
 }
 
-const KIOSK_ID = process.env.NEXT_PUBLIC_KIOSK_ID || 'XPOS-001';
+const DEFAULT_KIOSK_ID = process.env.NEXT_PUBLIC_KIOSK_ID || 'XPOS-001';
 const IDLE_TIMEOUT = 60000;
 
-type Screen = 'idle' | 'qr' | 'code-entry' | 'printing' | 'completed' | 'error';
+type Screen = 'idle' | 'qr' | 'printing' | 'completed' | 'error';
 
 interface PrintJobData {
   jobId: string;
@@ -77,17 +77,15 @@ interface PrintJobData {
 }
 
 export default function KioskApp() {
+  const [kioskId, setKioskId] = useState<string>(DEFAULT_KIOSK_ID);
   const [screen, setScreen] = useState<Screen>('idle');
   const [kioskInfo, setKioskInfo] = useState<any>(null);
   const [printerStatus, setPrinterStatus] = useState<string>('READY');
-  const [code, setCode] = useState<string[]>(['', '', '', '', '', '']);
   const [jobData, setJobData] = useState<PrintJobData | null>(null);
   const [error, setError] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [isShaking, setIsShaking] = useState(false);
 
-  // 🔒 Single-Use Dynamic QR Token for Instant Release Pairing
+  // 🔒 Dynamic pairing token
   const [pairToken, setPairToken] = useState<string>(() => {
     return 'XPOS-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '-' + Date.now().toString(36);
   });
@@ -95,7 +93,6 @@ export default function KioskApp() {
   const rotatePairToken = useCallback(() => {
     const newToken = 'XPOS-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '-' + Date.now().toString(36);
     setPairToken(newToken);
-    console.log('🔄 Kiosk single-use QR refreshed:', newToken);
   }, []);
 
   // 5-Second Auto Return Countdown for Upload Screen
@@ -112,6 +109,14 @@ export default function KioskApp() {
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Read kiosk ID from URL query param ?kiosk=XPOS-002 on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const param = new URLSearchParams(window.location.search).get('kiosk');
+      if (param) setKioskId(param.trim().toUpperCase());
+    }
+  }, []);
 
   // ── 5-Second Auto Return from Scan QR Upload Screen ──
   useEffect(() => {
@@ -138,7 +143,6 @@ export default function KioskApp() {
     if (screen !== 'idle' && screen !== 'printing' && screen !== 'completed') {
       idleTimerRef.current = setTimeout(() => {
         setScreen('idle');
-        setCode(['', '', '', '', '', '']);
         setJobData(null);
         setError('');
       }, IDLE_TIMEOUT);
@@ -151,13 +155,13 @@ export default function KioskApp() {
   useEffect(() => {
     async function loadKiosk() {
       try {
-        const res = await fetch(`${getApiUrl()}/api/kiosks/${KIOSK_ID}`);
+        const res = await fetch(`${getApiUrl()}/api/kiosks/${kioskId}`);
         const data = await res.json();
         if (data.success) setKioskInfo(data.data);
       } catch (e) { console.error('Failed to load kiosk info:', e); }
     }
     loadKiosk();
-  }, []);
+  }, [kioskId]);
 
   // ── WebSocket connection ──
   useEffect(() => {
@@ -165,9 +169,9 @@ export default function KioskApp() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('🔌 Kiosk connected to XPOS Cloud');
+      console.log(`🔌 Kiosk connected to XPOS Cloud as Station ${kioskId}`);
       setIsConnected(true);
-      socket.emit('join_kiosk', { kioskId: KIOSK_ID });
+      socket.emit('join_kiosk', { kioskId });
     });
 
     socket.on('disconnect', () => {
@@ -175,11 +179,11 @@ export default function KioskApp() {
       setIsConnected(false);
     });
 
-    // ⚡ Instant QR Pairing Event from Customer Phone
+    // ⚡ Instant Real-Time Print Event from Customer "Print Now"
     socket.on('kiosk_paired_print', (data: any) => {
-      console.log('⚡ Real-Time QR Pairing Triggered:', data);
-      if (data.kioskId && data.kioskId !== KIOSK_ID && data.targetKioskId && data.targetKioskId !== KIOSK_ID) {
-        return;
+      console.log('⚡ Real-Time Print Signal Received:', data);
+      if (data.targetKioskId && data.targetKioskId.toUpperCase() !== kioskId.toUpperCase() && data.kioskId && data.kioskId.toUpperCase() !== kioskId.toUpperCase()) {
+        return; // Guard: Only print if this signal was targeted for this station!
       }
 
       playKeySound('success');
@@ -197,8 +201,7 @@ export default function KioskApp() {
 
       setCurrentCharmingLine(getRandomCharmingLine());
       setScreen('printing');
-      setIsVerifying(false);
-      rotatePairToken(); // Single-use guarantee: Invalidate old QR immediately
+      rotatePairToken();
       startPageProgressSimulation(totalPgs);
 
       // Trigger physical print pipeline on backend/printer
@@ -206,11 +209,11 @@ export default function KioskApp() {
         fetch(`${getApiUrl()}/api/jobs/${data.jobId}/print`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kioskId: KIOSK_ID }),
+          body: JSON.stringify({ kioskId }),
         }).catch((e) => console.warn('Kiosk print trigger notice:', e));
       }
 
-      // Simulate completion after printing
+      // Complete print
       setTimeout(() => {
         handleJobCompleted(data.jobId);
       }, Math.max(5000, totalPgs * 1200));
@@ -219,21 +222,30 @@ export default function KioskApp() {
     // Receive new print job
     socket.on('new_job', (data: any) => {
       console.log('📥 New print job received:', data);
-      const totalPgs = data.job?.totalPages || 1;
+      if (data.targetKioskId && data.targetKioskId.toUpperCase() !== kioskId.toUpperCase()) {
+        return;
+      }
+
+      const totalPgs = data.totalPages || data.job?.totalPages || 1;
       setJobData({
-        jobId: data.job.id,
-        displayId: data.job.displayId,
-        downloadUrl: data.downloadUrl || `${getApiUrl()}/api/files/download/${data.job.file?.storageKey}`,
+        jobId: data.jobId || data.job?.id,
+        displayId: data.displayId || data.job?.displayId,
+        downloadUrl: data.downloadUrl || `${getApiUrl()}/api/files/download/${data.job?.file?.storageKey}`,
         totalPages: totalPgs,
         currentPage: 1,
-        fileName: data.job.file?.originalName || 'Document.pdf',
-        colorMode: data.job.colorMode,
-        copies: data.job.copies,
+        fileName: data.fileName || data.job?.file?.originalName || 'Document.pdf',
+        colorMode: data.colorMode || data.job?.colorMode || 'BW',
+        copies: data.copies || data.job?.copies || 1,
       });
       setCurrentCharmingLine(getRandomCharmingLine());
       setScreen('printing');
       rotatePairToken();
       startPageProgressSimulation(totalPgs);
+
+      // Complete print
+      setTimeout(() => {
+        handleJobCompleted(data.jobId || data.job?.id);
+      }, Math.max(5000, totalPgs * 1200));
     });
 
     // Receive print job progress
@@ -308,146 +320,11 @@ export default function KioskApp() {
       if (currentSeconds <= 0) {
         if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
         setScreen('idle');
-        setCode(['', '', '', '', '', '']);
         setJobData(null);
         setError('');
         rotatePairToken();
       }
     }, 1000);
-  };
-
-  // ── Verify Code & Direct Print (No extra verify button needed) ──
-  const verifyAndPrintCode = async (fullCode: string) => {
-    setIsVerifying(true);
-    setError('');
-
-    try {
-      const res = await fetch(`${getApiUrl()}/api/print-codes/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: fullCode,
-          kioskId: KIOSK_ID,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.success && data.data) {
-        playKeySound('success');
-        const printData = data.data;
-        const jobId = printData.jobId || printData.job?.id || '';
-        const displayId = printData.displayId || printData.job?.displayId || 'Active';
-        const downloadUrl = printData.downloadUrl || `${getApiUrl()}/api/files/download/${printData.file?.storageKey || ''}`;
-        const totalPages = printData.printSettings?.totalPages || printData.job?.totalPages || 1;
-        const fileName = printData.file?.originalName || printData.job?.file?.originalName || 'Document.pdf';
-        const colorMode = printData.printSettings?.colorMode || printData.job?.colorMode || 'BW';
-        const copies = printData.printSettings?.copies || printData.job?.copies || 1;
-
-        setJobData({
-          jobId,
-          displayId,
-          downloadUrl,
-          totalPages,
-          currentPage: 1,
-          fileName,
-          colorMode,
-          copies,
-        });
-
-        setCurrentCharmingLine(getRandomCharmingLine());
-        setScreen('printing');
-        setIsVerifying(false);
-
-        startPageProgressSimulation(totalPages);
-
-        // Send print trigger to backend / physical printer
-        if (jobId) {
-          try {
-            await fetch(`${getApiUrl()}/api/jobs/${jobId}/print`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ kioskId: KIOSK_ID }),
-            });
-          } catch (e) {
-            console.warn('Physical print trigger request sent');
-          }
-        }
-
-        // Simulate complete after physical print duration
-        setTimeout(() => {
-          handleJobCompleted(jobId);
-        }, Math.max(5000, totalPages * 1200));
-
-      } else {
-        playKeySound('error');
-        setIsShaking(true);
-        setError(data.error || 'Invalid or already used code. Please check and try again.');
-        setIsVerifying(false);
-
-        setTimeout(() => {
-          setIsShaking(false);
-          setCode(['', '', '', '', '', '']);
-        }, 1800);
-      }
-    } catch (e: any) {
-      playKeySound('error');
-      setIsShaking(true);
-      setError('Connection failed. Please verify kiosk network.');
-      setIsVerifying(false);
-      setTimeout(() => {
-        setIsShaking(false);
-        setCode(['', '', '', '', '', '']);
-      }, 1800);
-    }
-  };
-
-  // ── Numpad Tap Handler ──
-  const handleDigitPress = (digit: string) => {
-    if (isVerifying) return;
-    resetIdleTimer();
-
-    const emptyIdx = code.findIndex((d) => d === '');
-    if (emptyIdx === -1) return;
-
-    playKeySound('tap');
-    const newCode = [...code];
-    newCode[emptyIdx] = digit;
-    setCode(newCode);
-
-    // If 6th digit entered, auto-verify and start printing immediately!
-    if (emptyIdx === 5) {
-      const fullCode = newCode.join('');
-      verifyAndPrintCode(fullCode);
-    }
-  };
-
-  // ── Backspace Handler ──
-  const handleBackspace = () => {
-    if (isVerifying) return;
-    resetIdleTimer();
-    playKeySound('delete');
-
-    const filledIndices = code
-      .map((d, i) => (d !== '' ? i : -1))
-      .filter((i) => i !== -1);
-
-    if (filledIndices.length === 0) return;
-    const lastFilled = filledIndices[filledIndices.length - 1];
-
-    const newCode = [...code];
-    newCode[lastFilled] = '';
-    setCode(newCode);
-    setError('');
-  };
-
-  // ── Clear Code Handler ──
-  const handleClear = () => {
-    if (isVerifying) return;
-    resetIdleTimer();
-    playKeySound('delete');
-    setCode(['', '', '', '', '', '']);
-    setError('');
   };
 
   return (
@@ -468,7 +345,7 @@ export default function KioskApp() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-white/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 shadow-sm text-xs font-bold text-slate-700">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Station: <strong className="text-slate-900">{KIOSK_ID}</strong></span>
+            <span>Station: <strong className="text-slate-900">{kioskId}</strong></span>
           </div>
 
           <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-3.5 py-2 rounded-2xl text-xs font-bold shadow-sm">
@@ -484,7 +361,7 @@ export default function KioskApp() {
       <main className="flex-1 flex flex-col items-center justify-center py-6 relative z-10 max-w-4xl mx-auto w-full">
         <AnimatePresence mode="wait">
           {/* ──────────────────────────────────────── */}
-          {/* 1. IDLE / HOME SCREEN */}
+          {/* 1. IDLE / DIRECT STATION PRINT QR SCREEN */}
           {/* ──────────────────────────────────────── */}
           {screen === 'idle' && (
             <motion.div
@@ -496,329 +373,69 @@ export default function KioskApp() {
               className="w-full flex flex-col items-center text-center space-y-6"
             >
               <div className="space-y-1.5">
-                <span className="text-xs md:text-sm font-black text-blue-700 bg-blue-100 px-4 py-1 rounded-full uppercase tracking-wider">
-                  ⚡ Self-Service Print Station
+                <span className="text-xs md:text-sm font-black text-blue-700 bg-blue-100 px-4 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
+                  Station {kioskId} • Zero-Touch Real-Time Printing
                 </span>
-                <h2 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-                  Welcome to Print Bro
+                <h2 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight">
+                  Scan QR with Your Phone
                 </h2>
-                <p className="text-slate-600 font-medium text-xs md:text-sm max-w-lg mx-auto">
-                  Scan the single-use QR from your phone, enter your 6-digit code, or scan to upload documents.
+                <p className="text-slate-600 font-medium text-xs md:text-base max-w-lg mx-auto">
+                  Upload your documents, pay securely, and tap <strong className="text-blue-700">"Print Now"</strong> on your phone.
                 </p>
               </div>
 
-              {/* Action Cards Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl text-left items-stretch">
-                {/* ⚡ 1. INSTANT PRINT RELEASE QR CARD */}
-                <motion.div
-                  whileHover={{ scale: 1.01 }}
-                  className="bg-white p-6 md:p-7 rounded-[32px] border-2 border-blue-300 shadow-xl shadow-blue-500/10 flex flex-col items-center text-center justify-between space-y-4"
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>Live • Single Use</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playKeySound('tap');
-                        rotatePairToken();
-                      }}
-                      className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 transition-colors"
-                      title="Refresh single-use pairing token"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Refresh</span>
-                    </button>
-                  </div>
-
-                  <div>
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">
-                      SCAN TO PRINT INSTANTLY
-                    </h3>
-                    <p className="text-slate-600 text-xs md:text-sm font-medium mt-1 leading-snug max-w-xs">
-                      Open your code screen on phone & tap <strong>"Scan Kiosk QR"</strong>. Document prints in 1 second!
-                    </p>
-                  </div>
-
-                  {/* Dynamic Single-Use QR Code */}
-                  <div className="p-4 bg-white rounded-3xl border-2 border-blue-200 shadow-md flex items-center justify-center">
-                    <QRCodeSVG
-                      value={JSON.stringify({
-                        type: 'xpos_kiosk_pair',
-                        kioskId: KIOSK_ID,
-                        token: pairToken,
-                        pairKiosk: KIOSK_ID,
-                      })}
-                      size={180}
-                      level="H"
-                      includeMargin={true}
-                      imageSettings={{
-                        src: '/logo.svg',
-                        x: undefined,
-                        y: undefined,
-                        height: 28,
-                        width: 28,
-                        excavate: true,
-                      }}
-                    />
-                  </div>
-
-                  <div className="w-full bg-blue-50 rounded-2xl py-2.5 px-3 border border-blue-200 flex items-center justify-center gap-2 text-xs font-bold text-blue-900">
-                    <Zap className="w-4 h-4 text-blue-600 animate-pulse" />
-                    <span>Instant QR Release • Zero Typing</span>
-                  </div>
-                </motion.div>
-
-                {/* RIGHT COLUMN: MANUAL CODE ENTRY & UPLOAD */}
-                <div className="flex flex-col gap-5 justify-between">
-                  {/* ENTER 6-DIGIT CODE CARD */}
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      playKeySound('tap');
-                      setScreen('code-entry');
+              {/* Prominent Direct Station QR Card */}
+              <motion.div
+                whileHover={{ scale: 1.01 }}
+                className="bg-white p-7 md:p-8 rounded-[36px] border-2 border-blue-300 shadow-2xl shadow-blue-500/10 flex flex-col items-center text-center space-y-5 max-w-md w-full"
+              >
+                <div className="p-4 bg-white rounded-3xl border-2 border-blue-200 shadow-inner flex items-center justify-center">
+                  <QRCodeSVG
+                    value={`${getAppUrl()}/remote?kiosk=${kioskId}`}
+                    size={220}
+                    level="H"
+                    includeMargin={true}
+                    imageSettings={{
+                      src: '/logo.svg',
+                      x: undefined,
+                      y: undefined,
+                      height: 34,
+                      width: 34,
+                      excavate: true,
                     }}
-                    className="flex-1 p-6 md:p-7 rounded-[28px] bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex flex-col justify-between items-start space-y-4 shadow-xl shadow-blue-500/25 border-2 border-blue-400 group transition-all text-left"
-                    id="btn-kiosk-enter-code"
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shadow-inner group-hover:scale-110 transition-transform">
-                        <Hash className="w-7 h-7" />
-                      </div>
-                      <span className="bg-white text-blue-700 font-black text-xs px-3.5 py-1.5 rounded-full shadow-sm">
-                        Touchscreen 🔢
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="text-xl md:text-2xl font-black tracking-tight mb-1">ENTER 6-DIGIT CODE</h3>
-                      <p className="text-blue-100 text-xs md:text-sm font-medium leading-snug">
-                        Prefer typing? Enter your release code manually on the touchscreen keypad.
-                      </p>
-                    </div>
-                  </motion.button>
-
-                  {/* SCAN QR TO UPLOAD CARD */}
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      playKeySound('tap');
-                      setScreen('qr');
-                    }}
-                    className="flex-1 p-6 md:p-7 rounded-[28px] bg-white text-slate-900 flex flex-col justify-between items-start space-y-4 shadow-xl shadow-slate-200/50 border-2 border-slate-200 hover:border-blue-300 group transition-all text-left"
-                    id="btn-kiosk-scan-qr"
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 group-hover:scale-110 transition-transform">
-                        <QrCode className="w-7 h-7" />
-                      </div>
-                      <span className="bg-blue-50 text-blue-700 font-black text-xs px-3.5 py-1.5 rounded-full border border-blue-200">
-                        Upload from Phone 📲
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="text-xl md:text-2xl font-black tracking-tight mb-1 text-slate-900">SCAN QR TO UPLOAD</h3>
-                      <p className="text-slate-600 text-xs md:text-sm font-medium leading-snug">
-                        Don't have a document uploaded yet? Scan to upload and pay from your phone.
-                      </p>
-                    </div>
-                  </motion.button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ──────────────────────────────────────── */}
-          {/* 2. QR CODE DISPLAY SCREEN */}
-          {/* ──────────────────────────────────────── */}
-          {screen === 'qr' && (
-            <motion.div
-              key="qr"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              className="w-full max-w-md flex flex-col items-center text-center space-y-5"
-            >
-              <div className="space-y-1">
-                <h2 className="text-3xl font-black text-slate-900">Scan QR with Phone</h2>
-                <p className="text-slate-600 text-sm font-medium">Point your camera to upload documents directly</p>
-              </div>
-
-              {/* ⏱️ 5-Second Auto-Return Countdown Badge & Progress Bar */}
-              <div className="flex flex-col items-center gap-1.5 w-full">
-                <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 text-amber-900 px-4 py-1.5 rounded-full text-xs font-bold shadow-sm">
-                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                  <span>Returning to Home in {qrCountdown}s</span>
-                </div>
-                <div className="w-48 h-1.5 bg-slate-200 rounded-full overflow-hidden mt-0.5">
-                  <motion.div
-                    animate={{ width: `${(qrCountdown / 5) * 100}%` }}
-                    transition={{ duration: 0.3 }}
-                    className="h-full bg-blue-600 rounded-full"
                   />
                 </div>
-              </div>
 
-              <div className="p-6 bg-white rounded-3xl border-2 border-blue-200 shadow-2xl shadow-blue-500/10">
-                <QRCodeSVG
-                  value={`${getAppUrl()}/remote?kiosk=${KIOSK_ID}`}
-                  size={230}
-                  level="H"
-                  includeMargin={true}
-                  imageSettings={{
-                    src: '/logo.svg',
-                    x: undefined,
-                    y: undefined,
-                    height: 36,
-                    width: 36,
-                    excavate: true,
-                  }}
-                />
-              </div>
+                <div className="space-y-1">
+                  <p className="font-mono text-xs text-blue-600 font-bold bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100 inline-block">
+                    {getAppUrl()}/remote?kiosk={kioskId}
+                  </p>
+                  <p className="text-slate-500 text-xs font-semibold">
+                    Station: {kioskInfo?.name || `XPOS Station ${kioskId}`} • {kioskInfo?.location || 'Main Campus'}
+                  </p>
+                </div>
 
-              <p className="font-mono text-xs text-blue-600 font-bold bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100">
-                {getAppUrl()}/remote
-              </p>
-
-              <button
-                onClick={() => {
-                  playKeySound('tap');
-                  setScreen('idle');
-                }}
-                className="py-3 px-6 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center gap-2 transition-all active:scale-95"
-              >
-                <ArrowLeft className="w-4 h-4" /> Back to Home Now
-              </button>
-            </motion.div>
-          )}
-
-          {/* ──────────────────────────────────────── */}
-          {/* 3. CODE ENTRY SCREEN (FROSTED GLASS ROUND NUMPAD) */}
-          {/* ──────────────────────────────────────── */}
-          {screen === 'code-entry' && (
-            <motion.div
-              key="code-entry"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.22 }}
-              className="w-full max-w-lg flex flex-col items-center text-center space-y-6"
-            >
-              {/* Top Title & Back Button */}
-              <div className="w-full flex items-center justify-between">
-                <button
-                  onClick={() => {
-                    playKeySound('tap');
-                    setScreen('idle');
-                  }}
-                  className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-bold text-sm bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 active:scale-95 transition-all shadow-sm"
-                >
-                  <ArrowLeft className="w-4 h-4" /> Back
-                </button>
-                <span className="text-xs font-black uppercase text-blue-700 tracking-wider bg-blue-100 px-3 py-1 rounded-full">
-                  6-Digit Release
-                </span>
-              </div>
-
-              <div>
-                <h2 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-                  Enter Print Code
-                </h2>
-                <p className="text-slate-600 text-xs md:text-sm font-medium mt-1">
-                  Type your 6-digit code. Printing starts automatically!
-                </p>
-              </div>
-
-              {/* 6 Digit Input Display Boxes */}
-              <motion.div
-                animate={isShaking ? { x: [-10, 10, -10, 10, -5, 5, 0] } : {}}
-                transition={{ duration: 0.4 }}
-                className="flex items-center justify-center gap-2.5 md:gap-3.5 my-2"
-              >
-                {code.map((digit, i) => (
-                  <div
-                    key={i}
-                    className={`w-12 h-16 md:w-14 md:h-18 rounded-2xl flex items-center justify-center text-3xl md:text-4xl font-display font-black transition-all duration-200 border-2 ${
-                      digit
-                        ? 'bg-blue-50 text-blue-900 border-blue-600 shadow-md shadow-blue-500/10 scale-105'
-                        : i === code.findIndex((d) => d === '')
-                        ? 'bg-white text-blue-600 border-blue-400 ring-2 ring-blue-300 animate-pulse'
-                        : 'bg-white text-slate-300 border-slate-200'
-                    }`}
-                  >
-                    {digit}
-                  </div>
-                ))}
+                <div className="w-full bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 rounded-2xl py-3 px-4 border border-blue-200 flex items-center justify-center gap-2 text-xs font-bold text-blue-900">
+                  <Printer className="w-4 h-4 text-blue-600 animate-pulse" />
+                  <span>Ready for Print • Instant output on phone trigger</span>
+                </div>
               </motion.div>
 
-              {/* Status or Error Banner */}
-              {isVerifying ? (
-                <div className="flex items-center gap-2 text-blue-700 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl text-xs md:text-sm font-black">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Verifying code & preparing printer...</span>
+              {/* 3 Steps Guide Footer */}
+              <div className="grid grid-cols-3 gap-3 md:gap-4 max-w-xl w-full text-center">
+                <div className="bg-white/80 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+                  <span className="text-[10px] font-black text-blue-600 uppercase block mb-0.5">Step 1</span>
+                  <p className="text-xs font-bold text-slate-800">Scan QR Code</p>
                 </div>
-              ) : error ? (
-                <div className="text-rose-600 bg-rose-50 border border-rose-200 px-4 py-2 rounded-xl text-xs md:text-sm font-bold animate-fade-in">
-                  {error}
+                <div className="bg-white/80 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+                  <span className="text-[10px] font-black text-blue-600 uppercase block mb-0.5">Step 2</span>
+                  <p className="text-xs font-bold text-slate-800">Upload & Pay</p>
                 </div>
-              ) : (
-                <p className="text-slate-400 text-xs font-medium">Valid for 24 hours from creation</p>
-              )}
-
-              {/* 🌟 ULTRA-PREMIUM FROSTED GLASS ROUND NUMPAD */}
-              <div className="grid grid-cols-3 gap-3.5 md:gap-4.5 pt-2">
-                {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
-                  <motion.button
-                    key={num}
-                    type="button"
-                    whileHover={{ scale: 1.08 }}
-                    whileTap={{ scale: 0.88 }}
-                    onClick={() => handleDigitPress(num)}
-                    disabled={isVerifying}
-                    className="w-18 h-18 md:w-20 md:h-20 rounded-full bg-white/70 backdrop-blur-2xl hover:bg-gradient-to-tr hover:from-blue-600 hover:to-indigo-600 hover:text-white border-2 border-white/90 hover:border-transparent text-slate-900 font-display font-black text-2xl md:text-3xl shadow-[0_10px_25px_rgba(0,0,0,0.06)] hover:shadow-blue-500/25 flex items-center justify-center transition-all duration-150 active:scale-90 ring-1 ring-blue-200/50"
-                  >
-                    {num}
-                  </motion.button>
-                ))}
-
-                {/* CLEAR BUTTON */}
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.88 }}
-                  onClick={handleClear}
-                  disabled={isVerifying}
-                  className="w-18 h-18 md:w-20 md:h-20 rounded-full bg-slate-100/80 backdrop-blur-xl hover:bg-rose-50 hover:text-rose-600 border-2 border-slate-200/80 text-slate-600 font-black text-xs uppercase flex items-center justify-center transition-all duration-150 active:scale-90 shadow-sm"
-                >
-                  Clear
-                </motion.button>
-
-                {/* DIGIT 0 */}
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.88 }}
-                  onClick={() => handleDigitPress('0')}
-                  disabled={isVerifying}
-                  className="w-18 h-18 md:w-20 md:h-20 rounded-full bg-white/70 backdrop-blur-2xl hover:bg-gradient-to-tr hover:from-blue-600 hover:to-indigo-600 hover:text-white border-2 border-white/90 hover:border-transparent text-slate-900 font-display font-black text-2xl md:text-3xl shadow-[0_10px_25px_rgba(0,0,0,0.06)] hover:shadow-blue-500/25 flex items-center justify-center transition-all duration-150 active:scale-90 ring-1 ring-blue-200/50"
-                >
-                  0
-                </motion.button>
-
-                {/* BACKSPACE BUTTON */}
-                <motion.button
-                  type="button"
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.88 }}
-                  onClick={handleBackspace}
-                  disabled={isVerifying}
-                  className="w-18 h-18 md:w-20 md:h-20 rounded-full bg-slate-100/80 backdrop-blur-xl hover:bg-slate-200 text-slate-700 border-2 border-slate-200/80 flex items-center justify-center transition-all duration-150 active:scale-90 shadow-sm"
-                >
-                  <Delete className="w-6 h-6" />
-                </motion.button>
+                <div className="bg-white/80 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+                  <span className="text-[10px] font-black text-emerald-600 uppercase block mb-0.5">Step 3</span>
+                  <p className="text-xs font-bold text-slate-800">Tap "Print Now"</p>
+                </div>
               </div>
             </motion.div>
           )}

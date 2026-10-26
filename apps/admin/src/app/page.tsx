@@ -200,6 +200,8 @@ export default function SuperAdminRootPage() {
     socket.on('disconnect', () => setIsLiveConnected(false));
     socket.on('job_updated', () => fetchData());
     socket.on('job_update', () => fetchData());
+    socket.on('kiosks_updated', () => fetchData());
+    socket.on('kiosk_added', () => fetchData());
 
     return () => {
       socket.disconnect();
@@ -855,6 +857,9 @@ export default function SuperAdminRootPage() {
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">{kiosk.name} • {kiosk.location}</p>
+                        <div className="mt-2 flex items-center gap-1.5 text-[11px] font-mono font-bold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-xl border border-sky-100 w-fit">
+                          <span>/remote?kiosk={kiosk.displayId}</span>
+                        </div>
                       </div>
 
                       <div className="p-3 rounded-2xl bg-sky-50 text-sky-600 border border-sky-100">

@@ -340,6 +340,43 @@ router.post('/:id/print', async (req: Request, res: Response) => {
       totalPages: job.totalPages * (job.copies || 1),
     });
 
+    // ⚡ Real-Time Instant Print Dispatch to Target Kiosk Station
+    const targetKioskId = req.body.kioskId || job.kiosk?.displayId || job.kioskId;
+    if (targetKioskId) {
+      let downloadUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/files/download/${job.file?.storageKey}`;
+      try {
+        downloadUrl = await storage.getSignedUrl(job.file.storageKey, 600);
+      } catch {}
+
+      const kioskPayload = {
+        type: 'NEW_JOB',
+        jobId: job.id,
+        displayId: job.displayId,
+        totalPages: job.totalPages * (job.copies || 1),
+        fileName: job.file?.originalName || 'Document.pdf',
+        colorMode: job.colorMode,
+        copies: job.copies || 1,
+        downloadUrl,
+        job: {
+          id: job.id,
+          displayId: job.displayId,
+          colorMode: job.colorMode,
+          copies: job.copies || 1,
+          totalPages: job.totalPages,
+          file: {
+            originalName: job.file?.originalName || 'Document.pdf',
+            storageKey: job.file?.storageKey,
+          },
+        },
+      };
+
+      if (job.kioskId) io.to(`kiosk:${job.kioskId}`).emit('new_job', kioskPayload);
+      if (job.kiosk?.displayId) io.to(`kiosk:${job.kiosk.displayId}`).emit('new_job', kioskPayload);
+      if (req.body.kioskId) io.to(`kiosk:${req.body.kioskId}`).emit('new_job', kioskPayload);
+      io.emit('kiosk_paired_print', { ...kioskPayload, targetKioskId });
+      console.log(`⚡ Instant Print Event emitted to Station ${targetKioskId}`);
+    }
+
     // Submit to SavaPage (or mock printer)
     const printResult = await printer.submitPrintJob({
       filePath: tempFilePath,

@@ -140,6 +140,13 @@ export async function getJob(jobId: string) {
   return apiRequest<any>(`/api/jobs/${jobId}`);
 }
 
+export async function triggerPrintJob(jobId: string, kioskId?: string) {
+  return apiRequest<any>(`/api/jobs/${jobId}/print`, {
+    method: 'POST',
+    body: JSON.stringify({ kioskId }),
+  });
+}
+
 // ── Payments ──
 export async function createPayment(jobId: string, returnUrl?: string) {
   return apiRequest<any>('/api/payments/create', {

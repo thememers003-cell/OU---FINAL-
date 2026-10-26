@@ -24,13 +24,15 @@ import {
   Plus,
   Bot,
   Zap,
-  Check
+  Check,
+  Radio
 } from 'lucide-react';
-import { createSession, uploadFile, calculatePrice, getKiosks, getPricing, createJob, createPayment } from '../../lib/api';
+import { createSession, uploadFile, calculatePrice, getKiosks, getPricing, createJob, createPayment, triggerPrintJob, getJob } from '../../lib/api';
+import { connectSocket, joinSession } from '../../lib/socket';
 import { renderPdfPages } from '../../lib/pdf-preview';
 import { playKeySound } from '../../lib/sound';
 
-type Step = 'upload' | 'settings' | 'demo' | 'kiosk' | 'summary';
+type Step = 'kiosk' | 'upload' | 'settings' | 'demo' | 'summary';
 
 interface FileSettingsState {
   file: File;
@@ -48,11 +50,21 @@ function RemotePrintContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedKiosk = searchParams.get('kiosk');
+  const isPaidFlow = searchParams.get('paid') === 'true';
+  const paramJobId = searchParams.get('jobId');
+  const paramDisplayId = searchParams.get('displayId');
 
-  const [step, setStep] = useState<Step>('upload');
+  const [step, setStep] = useState<Step>(() => (preselectedKiosk ? 'upload' : 'kiosk'));
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Paid Flow Real-Time Print Tracking
+  const [paidJob, setPaidJob] = useState<any>(null);
+  const [printStatus, setPrintStatus] = useState<string>('PAID');
+  const [printCurrentPage, setPrintCurrentPage] = useState<number>(0);
+  const [printTotalPages, setPrintTotalPages] = useState<number>(1);
+  const [isPrintingTriggered, setIsPrintingTriggered] = useState(false);
 
   // File state
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -142,7 +154,90 @@ function RemotePrintContent() {
       } catch (e) {}
     }
     loadData();
+
+    // ⚡ Real-Time Kiosk Fleet Updates from Admin
+    const socket = connectSocket();
+    const handleKiosksUpdated = async () => {
+      try {
+        const res = await getKiosks();
+        if (res.success && res.data) setKiosks(res.data);
+      } catch {}
+    };
+    socket.on('kiosks_updated', handleKiosksUpdated);
+    const pollInterval = setInterval(handleKiosksUpdated, 5000);
+
+    return () => {
+      socket.off('kiosks_updated', handleKiosksUpdated);
+      clearInterval(pollInterval);
+    };
   }, []);
+
+  // ⚡ Real-Time Tracking for Paid Flow (Instant "Print Now" & Status Updates)
+  useEffect(() => {
+    if (!isPaidFlow || !paramJobId) return;
+
+    async function fetchInitialJob() {
+      try {
+        const res = await getJob(paramJobId!);
+        if (res.success && res.data) {
+          setPaidJob(res.data);
+          setPrintStatus(res.data.status || 'PAID');
+          if (res.data.currentPage !== undefined) setPrintCurrentPage(res.data.currentPage);
+          if (res.data.totalPages !== undefined) setPrintTotalPages(res.data.totalPages);
+          if (res.data.kiosk?.displayId && !selectedKiosk) {
+            setSelectedKiosk(res.data.kiosk.displayId);
+          }
+          if (res.data.sessionId) {
+            joinSession(res.data.sessionId);
+          }
+        }
+      } catch {}
+    }
+    fetchInitialJob();
+
+    const socket = connectSocket();
+    const handleJobUpdate = (data: any) => {
+      if (data.jobId === paramJobId || data.displayId === paramDisplayId) {
+        setPrintStatus(data.status);
+        if (data.currentPage !== undefined) setPrintCurrentPage(data.currentPage);
+        if (data.totalPages !== undefined) setPrintTotalPages(data.totalPages);
+        if (data.status === 'COMPLETED') {
+          playKeySound('success');
+        }
+      }
+    };
+
+    socket.on('job_update', handleJobUpdate);
+    const poll = setInterval(fetchInitialJob, 2500);
+
+    return () => {
+      socket.off('job_update', handleJobUpdate);
+      clearInterval(poll);
+    };
+  }, [isPaidFlow, paramJobId, paramDisplayId, selectedKiosk]);
+
+  // 🖨️ Handle "Print Now" Button Trigger
+  const handlePrintNow = async () => {
+    if (!paramJobId) return;
+    playKeySound('tap');
+    setIsPrintingTriggered(true);
+    setPrintStatus('SENDING');
+    setError(null);
+    try {
+      const res = await triggerPrintJob(paramJobId, selectedKiosk || undefined);
+      if (res.success) {
+        setPrintStatus('PRINTING');
+      } else {
+        setError(res.error || 'Failed to trigger print at station');
+        setPrintStatus('PAID');
+        setIsPrintingTriggered(false);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Print error occurred');
+      setPrintStatus('PAID');
+      setIsPrintingTriggered(false);
+    }
+  };
 
   // Total selected pages calculation across all documents
   const totalCalculatedPages = perFileSettings.length > 0
@@ -390,8 +485,8 @@ function RemotePrintContent() {
       const jobRes = await createJob({
         sessionId: activeSessionId,
         fileId: fileInfo.id,
-        kioskId: null,
-        printMethod: 'CODE',
+        kioskId: selectedKiosk || null,
+        printMethod: 'QR',
         colorMode,
         paperSize: 'A4',
         sides,
@@ -422,7 +517,7 @@ function RemotePrintContent() {
       }
 
       // Fallback to /payment page
-      router.push(`/payment?jobId=${jobRes.data.id}&displayId=${jobRes.data.displayId}&amount=${totalAmount}&method=CODE`);
+      router.push(`/payment?jobId=${jobRes.data.id}&displayId=${jobRes.data.displayId}&amount=${totalAmount}&method=QR&kiosk=${selectedKiosk || ''}`);
     } catch (err: any) {
       playKeySound('error');
       setError(err?.message || 'Failed to proceed to payment');
@@ -432,11 +527,12 @@ function RemotePrintContent() {
 
   // Mascot Guide Message helper
   const getMascotMessage = () => {
+    if (isPaidFlow) return "Payment verified! Tap 'Print Now' to print at your station in real time!";
+    if (step === 'kiosk') return "Step 1: Choose which station you'd like to print at!";
     if (step === 'upload') return "Drop up to 10 files or photos & I'll merge them instantly!";
     if (step === 'settings') return "Customize color, double side & tap pages to customize!";
     if (step === 'demo') return "Swipe through your real document gallery & tap pages to toggle!";
-    if (step === 'kiosk') return "Universal Pickup: use your 6-digit code at any kiosk station!";
-    return "Review your order summary & pay securely via UPI!";
+    return "Review your order summary & pay securely to print!";
   };
 
   return (
@@ -446,33 +542,59 @@ function RemotePrintContent() {
         <div className="flex items-center justify-between mb-3">
           <button
             onClick={() => {
-              if (step === 'upload') router.back();
+              if (isPaidFlow) router.push('/remote');
+              else if (step === 'upload') {
+                if (!preselectedKiosk) setStep('kiosk');
+                else router.back();
+              }
               else if (step === 'settings') setStep('upload');
               else if (step === 'demo') setStep('settings');
-              else if (step === 'kiosk') setStep('demo');
-              else if (step === 'summary') setStep('kiosk');
+              else if (step === 'summary') setStep('demo');
+              else if (step === 'kiosk') router.back();
             }}
             className="flex items-center gap-2 text-blue-600 hover:text-blue-800 transition-all font-bold text-sm bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 shadow-sm active:scale-95"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back</span>
+            <span>{isPaidFlow ? 'Start Over' : 'Back'}</span>
           </button>
 
-          <div className="flex items-center gap-2">
-            {['upload', 'settings', 'demo', 'kiosk', 'summary'].map((s, i) => (
-              <div
-                key={s}
-                className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
-                  step === s
-                    ? 'bg-blue-600 scale-125 shadow-sm shadow-blue-500'
-                    : i < ['upload', 'settings', 'demo', 'kiosk', 'summary'].indexOf(step)
-                    ? 'bg-blue-300'
-                    : 'bg-slate-200'
-                }`}
-              />
-            ))}
-          </div>
+          {!isPaidFlow && (
+            <div className="flex items-center gap-2">
+              {(preselectedKiosk ? ['upload', 'settings', 'demo', 'summary'] : ['kiosk', 'upload', 'settings', 'demo', 'summary']).map((s, i, arr) => (
+                <div
+                  key={s}
+                  className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                    step === s
+                      ? 'bg-blue-600 scale-125 shadow-sm shadow-blue-500'
+                      : arr.indexOf(step) > i
+                      ? 'bg-blue-300'
+                      : 'bg-slate-200'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Selected Kiosk Station Live Pill */}
+        {selectedKiosk && !isPaidFlow && (
+          <div className="flex items-center justify-between bg-blue-50/90 border border-blue-200 rounded-2xl px-3.5 py-2 mb-3 text-xs font-bold text-blue-900 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Target Station: <strong className="text-blue-700 font-extrabold">{selectedKiosk}</strong></span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                playKeySound('tap');
+                setStep('kiosk');
+              }}
+              className="text-[11px] font-black text-blue-600 hover:text-blue-800 bg-white px-2.5 py-1 rounded-xl border border-blue-200 active:scale-95 transition-all shadow-xs"
+            >
+              Change Station
+            </button>
+          </div>
+        )}
 
         {/* 🤖 Animated Companion Mascot Badge ("Printy") */}
         <motion.div
@@ -995,7 +1117,7 @@ function RemotePrintContent() {
         )}
 
         {/* ════════════════════════════════════════════════ */}
-        {/* STEP 4: KIOSK SELECTION (UNIVERSAL PICKUP) */}
+        {/* STEP 1: KIOSK SELECTION (START OF THE REMOTE FLOW) */}
         {/* ════════════════════════════════════════════════ */}
         {step === 'kiosk' && (
           <motion.div
@@ -1004,53 +1126,83 @@ function RemotePrintContent() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.22 }}
-            className="flex-1 flex flex-col space-y-5 my-auto"
+            className="flex-1 flex flex-col space-y-4 my-auto"
           >
             <div>
-              <span className="text-xs font-black text-blue-700 bg-blue-100 px-3.5 py-1 rounded-full uppercase tracking-wider">Universal Pickup</span>
-              <h1 className="text-2xl md:text-3xl font-black text-slate-900 mt-2 mb-1 tracking-tight">Select Pickup Kiosk</h1>
-              <p className="text-slate-600 text-xs md:text-sm font-medium">Your 6-digit release code works at any active Print Bro kiosk station</p>
+              <span className="text-xs font-black text-blue-700 bg-blue-100 px-3.5 py-1 rounded-full uppercase tracking-wider">
+                Step 1 • Choose Station
+              </span>
+              <h1 className="text-2xl md:text-3xl font-black text-slate-900 mt-2 mb-1 tracking-tight">
+                Select Printing Station
+              </h1>
+              <p className="text-slate-600 text-xs md:text-sm font-medium">
+                Choose the kiosk station where you want your document printed:
+              </p>
             </div>
 
-            {/* Enlarged, Spacious & Prominent Universal Kiosk Box */}
-            <div className="flex-1 flex flex-col justify-center">
-              <motion.div
-                initial={{ scale: 0.98 }}
-                animate={{ scale: 1 }}
-                className="w-full p-6 md:p-8 rounded-[24px] border-2 border-blue-500 bg-gradient-to-b from-blue-50/90 via-white to-blue-50/50 shadow-xl shadow-blue-500/10 text-left space-y-4"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/25 flex-shrink-0">
-                    <Printer className="w-7 h-7" />
-                  </div>
-                  <span className="text-xs bg-emerald-100 text-emerald-800 font-black px-3.5 py-1 rounded-full border border-emerald-200 inline-flex items-center gap-1.5 shadow-xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Universal Access
-                  </span>
+            {/* Live Kiosks List */}
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {kiosks.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-3xl border border-slate-200">
+                  <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-2" />
+                  <p className="text-slate-700 font-bold text-sm">Searching for available kiosk stations...</p>
                 </div>
+              ) : (
+                kiosks.map((kiosk) => {
+                  const isSelected = selectedKiosk === kiosk.displayId;
+                  return (
+                    <motion.div
+                      key={kiosk.id}
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => {
+                        playKeySound('tap');
+                        setSelectedKiosk(kiosk.displayId);
+                        setStep('upload');
+                      }}
+                      className={`p-5 rounded-3xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+                        isSelected
+                          ? 'border-blue-600 bg-blue-50/70 shadow-lg shadow-blue-500/10'
+                          : 'border-slate-200 bg-white hover:border-blue-300 shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${
+                          isSelected ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700'
+                        }`}>
+                          <Printer className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-black text-slate-900">{kiosk.displayId}</h3>
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Ready
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">
+                            {kiosk.name} • {kiosk.location}
+                          </p>
+                        </div>
+                      </div>
 
-                <div>
-                  <h3 className="text-xl md:text-2xl font-black text-slate-900 mb-1 tracking-tight">
-                    Any Available Print Bro Kiosk
-                  </h3>
-                  <p className="text-slate-600 text-sm font-medium leading-relaxed">
-                    Walk up to <strong className="text-slate-900 font-bold">ANY active Print Bro kiosk</strong> near you, tap <strong className="text-blue-700 font-bold">"ENTER CODE"</strong>, and collect your printed pages instantly.
-                  </p>
-                </div>
-
-                <div className="pt-3 border-t border-blue-100 flex items-center justify-between text-xs font-bold text-slate-500">
-                  <span>⚡ 24-Hour Code Validity</span>
-                  <span className="text-blue-700 font-black">All Stations Supported ✓</span>
-                </div>
-              </motion.div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                          Select →
+                        </span>
+                      </div>
+                    </motion.div>
+                  );
+                })
+              )}
             </div>
           </motion.div>
         )}
 
         {/* ════════════════════════════════════════════════ */}
-        {/* STEP 5: SUMMARY & PROCEED TO PAYMENT */}
+        {/* STEP 4: SUMMARY & PROCEED TO PAYMENT */}
         {/* ════════════════════════════════════════════════ */}
-        {step === 'summary' && (
+        {step === 'summary' && !isPaidFlow && (
           <motion.div
             key="summary"
             initial={{ opacity: 0, y: 12 }}
@@ -1095,8 +1247,10 @@ function RemotePrintContent() {
                 <span className="text-slate-900 font-bold">{sides === 'SINGLE' ? 'Single Side' : 'Double Side (Duplex)'}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-600 font-bold">Pickup Station</span>
-                <span className="text-slate-900 font-bold">Any Available Print Bro Kiosk</span>
+                <span className="text-slate-600 font-bold">Selected Print Station</span>
+                <span className="text-blue-700 font-black bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200">
+                  {selectedKiosk ? `Station ${selectedKiosk}` : 'Station Ready'}
+                </span>
               </div>
               <div className="h-px bg-slate-200" />
               <div className="flex justify-between items-baseline pt-2">
@@ -1110,79 +1264,187 @@ function RemotePrintContent() {
             {error && <p className="mt-2 text-rose-600 text-sm font-bold text-center bg-rose-50 border border-rose-200 p-3 rounded-xl">{error}</p>}
           </motion.div>
         )}
+
+        {/* ════════════════════════════════════════════════ */}
+        {/* PAID FLOW: PRINT NOW BUTTON & REAL-TIME PROGRESS */}
+        {/* ════════════════════════════════════════════════ */}
+        {isPaidFlow && (
+          <motion.div
+            key="paid-flow"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex-1 flex flex-col justify-between space-y-5 my-auto"
+          >
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
+                <CheckCircle2 className="w-10 h-10" />
+              </div>
+              <span className="text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-3.5 py-1 rounded-full uppercase tracking-wider inline-block">
+                Payment Confirmed ✓
+              </span>
+              <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
+                {printStatus === 'COMPLETED' ? 'Printing Completed!' : 'Ready to Print'}
+              </h1>
+              <p className="text-slate-600 text-xs md:text-sm font-medium">
+                {printStatus === 'COMPLETED'
+                  ? `Please collect your printed pages from Station ${selectedKiosk || 'XPOS-001'}`
+                  : `Tap "Print Now" to output your document at Station ${selectedKiosk || 'XPOS-001'} in real time.`}
+              </p>
+            </div>
+
+            {/* Station & Job Card */}
+            <div className="bg-white p-6 rounded-3xl border-2 border-blue-200 shadow-xl shadow-blue-500/5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <span className="text-xs font-bold text-slate-500 uppercase">Target Station</span>
+                <span className="text-base font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-xl border border-blue-200">
+                  {selectedKiosk || paidJob?.kiosk?.displayId || 'Station Ready'}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs font-semibold text-slate-600">
+                <div className="flex justify-between">
+                  <span>Job ID</span>
+                  <span className="font-mono font-bold text-slate-900">{paramDisplayId || paidJob?.displayId || 'Active'}</span>
+                </div>
+                {paidJob?.file?.originalName && (
+                  <div className="flex justify-between">
+                    <span>Document</span>
+                    <span className="font-bold text-slate-900 truncate max-w-[180px]">{paidJob.file.originalName}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Color Mode</span>
+                  <span className="font-bold text-slate-900">{paidJob?.colorMode === 'COLOR' ? 'Color' : 'Black & White'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total Pages</span>
+                  <span className="font-bold text-slate-900">{printTotalPages || paidJob?.totalPages || 1} pages</span>
+                </div>
+              </div>
+
+              {/* Real-time Progress Bar for Printing State */}
+              {printStatus === 'PRINTING' && (
+                <div className="pt-2 space-y-2">
+                  <div className="flex justify-between text-xs font-bold text-blue-700">
+                    <span className="flex items-center gap-1.5">
+                      <Printer className="w-4 h-4 animate-bounce" /> Printing in progress...
+                    </span>
+                    <span>
+                      {printCurrentPage > 0 ? `Page ${printCurrentPage} of ${printTotalPages}` : 'Starting printer...'}
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-blue-100 rounded-full overflow-hidden">
+                    <motion.div
+                      animate={{
+                        width: printTotalPages > 0 ? `${Math.max(15, (printCurrentPage / printTotalPages) * 100)}%` : '50%'
+                      }}
+                      transition={{ duration: 0.3 }}
+                      className="h-full bg-blue-600 rounded-full"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {printStatus === 'COMPLETED' && (
+                <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-center text-xs font-bold text-emerald-800">
+                  🎉 Print job successfully delivered! Thank you for using Print Bro.
+                </div>
+              )}
+
+              {error && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-600 text-xs font-bold text-center">
+                  {error}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-3">
+              {printStatus !== 'PRINTING' && printStatus !== 'COMPLETED' && (
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handlePrintNow}
+                  disabled={isPrintingTriggered}
+                  className="w-full py-4 bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-600 text-white rounded-[22px] font-black text-lg flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/25 active:scale-95 transition-all"
+                >
+                  <Printer className="w-5 h-5" />
+                  {isPrintingTriggered ? 'Sending Print Signal...' : 'PRINT NOW'}
+                </motion.button>
+              )}
+
+              {printStatus === 'COMPLETED' && (
+                <button
+                  onClick={() => router.push(selectedKiosk ? `/remote?kiosk=${selectedKiosk}` : '/remote')}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-[22px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                  Print Another Document <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* 🌟 Curvey & Lifted Bottom Action Button Area */}
-      <div className="pt-4 pb-2">
-        {step === 'upload' && fileInfo && (
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={() => {
-              playKeySound('tap');
-              setStep('settings');
-            }}
-            className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
-          >
-            Configure Print Settings <ArrowRight className="w-4 h-4" />
-          </motion.button>
-        )}
+      {!isPaidFlow && (
+        <div className="pt-4 pb-2">
+          {step === 'upload' && fileInfo && (
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={() => {
+                playKeySound('tap');
+                setStep('settings');
+              }}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
+            >
+              Configure Print Settings <ArrowRight className="w-4 h-4" />
+            </motion.button>
+          )}
 
-        {step === 'settings' && (
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={() => {
-              playKeySound('tap');
-              setStep('demo');
-            }}
-            className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
-          >
-            Preview Live Gallery Demo <Eye className="w-4 h-4" />
-          </motion.button>
-        )}
+          {step === 'settings' && (
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={() => {
+                playKeySound('tap');
+                setStep('demo');
+              }}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
+            >
+              Preview Live Gallery Demo <Eye className="w-4 h-4" />
+            </motion.button>
+          )}
 
-        {step === 'demo' && (
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={() => {
-              playKeySound('tap');
-              setStep('kiosk');
-            }}
-            className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
-          >
-            Select Kiosk Station <ArrowRight className="w-4 h-4" />
-          </motion.button>
-        )}
+          {step === 'demo' && (
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={() => {
+                playKeySound('tap');
+                setStep('summary');
+              }}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
+            >
+              Review Order & Print <ArrowRight className="w-4 h-4" />
+            </motion.button>
+          )}
 
-        {step === 'kiosk' && (
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={() => {
-              playKeySound('tap');
-              setStep('summary');
-            }}
-            className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all"
-          >
-            Review My Order <ArrowRight className="w-4 h-4" />
-          </motion.button>
-        )}
-
-        {step === 'summary' && (
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleCreateJob}
-            disabled={loading}
-            className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base md:text-lg flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 disabled:opacity-50 active:scale-[0.98] transition-all"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-            {loading ? 'Creating Order...' : `PAY ₹${calculateDynamicTotal()} & GET CODE`}
-          </motion.button>
-        )}
-      </div>
+          {step === 'summary' && (
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={handleCreateJob}
+              disabled={loading}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-[20px] font-black text-base md:text-lg flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 disabled:opacity-50 active:scale-[0.98] transition-all"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+              {loading ? 'Creating Order...' : `PAY ₹${calculateDynamicTotal()} & PROCEED TO PRINT`}
+            </motion.button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
