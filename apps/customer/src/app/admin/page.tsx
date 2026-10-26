@@ -165,19 +165,54 @@ export default function CustomerAdminRoutePage() {
   };
 
   const getKioskRemoteUrl = (kiosk: KioskInfo) => {
-    if (kiosk.qrUrl && kiosk.qrUrl.startsWith('http')) {
+    if (kiosk.qrUrl && kiosk.qrUrl.startsWith('http') && !kiosk.qrUrl.includes('xpos-printing-cloud-customer.vercel.app')) {
       return kiosk.qrUrl;
     }
+    const envApp = process.env.NEXT_PUBLIC_APP_URL;
+    if (envApp && !envApp.includes('xpos-printing-cloud-customer.vercel.app') && !envApp.includes('localhost')) {
+      return `${envApp.replace(/\/$/, '')}/remote?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+    }
     if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname;
+      const { protocol, hostname, port, origin } = window.location;
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return `http://localhost:3000/remote?kiosk=${kiosk.displayId}`;
+        return `http://localhost:3000/remote?kiosk=${encodeURIComponent(kiosk.displayId)}`;
       }
       if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(hostname)) {
-        return `http://${hostname}:3000/remote?kiosk=${kiosk.displayId}`;
+        return `http://${hostname}:3000/remote?kiosk=${encodeURIComponent(kiosk.displayId)}`;
       }
+      if (hostname.includes('loca.lt')) {
+        return `https://xpos-print-customer.loca.lt/remote?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+      }
+      if (port === '3001') {
+        return `${protocol}//${hostname}:3000/remote?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+      }
+      return `${origin}/remote?kiosk=${encodeURIComponent(kiosk.displayId)}`;
     }
-    return `https://xpos-printing-cloud-customer.vercel.app/remote?kiosk=${kiosk.displayId}`;
+    return `http://localhost:3000/remote?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+  };
+
+  const getKioskScreenUrl = (kiosk: KioskInfo) => {
+    const envKiosk = process.env.NEXT_PUBLIC_KIOSK_URL;
+    if (envKiosk && !envKiosk.includes('localhost')) {
+      return `${envKiosk.replace(/\/$/, '')}/?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+    }
+    if (typeof window !== 'undefined') {
+      const { protocol, hostname, port, origin } = window.location;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return `http://localhost:3002/?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+      }
+      if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(hostname)) {
+        return `http://${hostname}:3002/?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+      }
+      if (hostname.includes('loca.lt')) {
+        return `https://xpos-kiosk.loca.lt/?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+      }
+      if (port === '3001' || port === '3000') {
+        return `${protocol}//${hostname}:3002/?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+      }
+      return `${origin}/kiosk/?kiosk=${encodeURIComponent(kiosk.displayId)}`;
+    }
+    return `http://localhost:3002/?kiosk=${encodeURIComponent(kiosk.displayId)}`;
   };
 
   const getRemainingCountdown = (expiresAtStr: string | null) => {
@@ -220,7 +255,9 @@ export default function CustomerAdminRoutePage() {
               printerStatus: k.printerStatus || 'READY',
               printerName: k.printerName || 'Canon MF280 Series',
               totalJobsServed: k.totalJobsServed || 0,
-              qrUrl: k.qrUrl || `https://xpos-printing-cloud-customer.vercel.app/remote?kiosk=${k.displayId}`,
+              qrUrl: k.qrUrl && !k.qrUrl.includes('xpos-printing-cloud-customer.vercel.app')
+                ? k.qrUrl
+                : `http://localhost:3000/remote?kiosk=${encodeURIComponent(k.displayId)}`,
               lastHeartbeat: k.lastHeartbeat || new Date().toISOString(),
               isOnline: k.isOnline ?? (k.status === 'ACTIVE'),
               paperLevel: k.paperLevel ?? 85,
@@ -920,6 +957,7 @@ export default function CustomerAdminRoutePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {kiosks.map(kiosk => {
                     const remoteUrl = getKioskRemoteUrl(kiosk);
+                    const kioskScreenUrl = getKioskScreenUrl(kiosk);
                     return (
                       <div
                         key={kiosk.id}
@@ -1034,14 +1072,14 @@ export default function CustomerAdminRoutePage() {
                           </button>
 
                           <a
-                            href={remoteUrl}
+                            href={kioskScreenUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-sm"
-                            title={`Open Live Remote Print Page for ${kiosk.displayId}`}
+                            title={`Open Live Kiosk Display Station for ${kiosk.displayId}`}
                           >
                             <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Go to Station</span>
+                            <span>Open Kiosk Screen</span>
                           </a>
                         </div>
 

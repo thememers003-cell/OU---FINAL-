@@ -48,18 +48,39 @@ function getAppUrl(): string {
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
     const appParam = params.get('app');
-    if (appParam) return appParam;
+    if (appParam) return appParam.replace(/\/$/, '');
 
-    const hostname = window.location.hostname;
+    const { protocol, hostname, port, origin } = window.location;
+
     if (hostname.includes('loca.lt')) {
       return 'https://xpos-print-customer.loca.lt';
     }
+
+    const envApp = process.env.NEXT_PUBLIC_APP_URL;
+    if (envApp && !envApp.includes('xpos-printing-cloud-customer.vercel.app') && !envApp.includes('localhost')) {
+      return envApp.replace(/\/$/, '');
+    }
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:3000';
+    }
+
+    if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(hostname)) {
+      return `http://${hostname}:3000`;
+    }
+
+    if (port === '3002') {
+      return `${protocol}//${hostname}:3000`;
+    }
+
+    return origin;
   }
+
   const envApp = process.env.NEXT_PUBLIC_APP_URL;
-  if (envApp && !envApp.includes('192.168.') && !envApp.includes('localhost')) {
-    return envApp;
+  if (envApp && !envApp.includes('xpos-printing-cloud-customer.vercel.app')) {
+    return envApp.replace(/\/$/, '');
   }
-  return 'https://xpos-printing-cloud-customer.vercel.app';
+  return 'http://localhost:3000';
 }
 
 const DEFAULT_KIOSK_ID = process.env.NEXT_PUBLIC_KIOSK_ID || 'XPOS-001';
@@ -79,7 +100,22 @@ interface PrintJobData {
 }
 
 export default function KioskApp() {
-  const [kioskId, setKioskId] = useState<string>(DEFAULT_KIOSK_ID);
+  // Synchronously initialize kioskId from URL query param if present
+  const [kioskId, setKioskId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const param = new URLSearchParams(window.location.search).get('kiosk');
+      if (param) return param.trim();
+    }
+    return DEFAULT_KIOSK_ID;
+  });
+
+  const kioskIdRef = useRef<string>(kioskId);
+  kioskIdRef.current = kioskId;
+
+  // Available kiosks list for station switcher
+  const [allKiosks, setAllKiosks] = useState<any[]>([]);
+  const [showStationPicker, setShowStationPicker] = useState(false);
+
   const [screen, setScreen] = useState<Screen>('idle');
   const [kioskInfo, setKioskInfo] = useState<any>(null);
   const [printerStatus, setPrinterStatus] = useState<string>('READY');
@@ -112,13 +148,48 @@ export default function KioskApp() {
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Read kiosk ID from URL query param ?kiosk=XPOS-002 on mount
+  // Read kiosk ID from URL query param on mount or URL change
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('kiosk');
-      if (param) setKioskId(param.trim().toUpperCase());
+      if (param && param.trim() !== kioskId) {
+        const clean = param.trim();
+        setKioskId(clean);
+        kioskIdRef.current = clean;
+      }
     }
   }, []);
+
+  // Load all available kiosks from backend for station switcher
+  useEffect(() => {
+    async function loadAllKiosks() {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/kiosks`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setAllKiosks(json.data);
+        }
+      } catch (e) {
+        console.warn('Could not load kiosk fleet list:', e);
+      }
+    }
+    loadAllKiosks();
+  }, []);
+
+  const handleSelectStation = (newId: string) => {
+    const cleanId = newId.trim();
+    setKioskId(cleanId);
+    kioskIdRef.current = cleanId;
+    setShowStationPicker(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('kiosk', cleanId);
+      window.history.replaceState({}, '', url.toString());
+    }
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('join_kiosk', { kioskId: cleanId });
+    }
+  };
 
   // ── 5-Second Auto Return from Scan QR Upload Screen ──
   useEffect(() => {
@@ -180,9 +251,9 @@ export default function KioskApp() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log(`🔌 Kiosk connected to XPOS Cloud as Station ${kioskId}`);
+      console.log(`🔌 Kiosk connected to XPOS Cloud as Station ${kioskIdRef.current}`);
       setIsConnected(true);
-      socket.emit('join_kiosk', { kioskId });
+      socket.emit('join_kiosk', { kioskId: kioskIdRef.current });
     });
 
     socket.on('disconnect', (reason) => {
@@ -198,7 +269,11 @@ export default function KioskApp() {
     // ⚡ Instant Real-Time Print Event from Customer "Print Now"
     socket.on('kiosk_paired_print', (data: any) => {
       console.log('⚡ Real-Time Print Signal Received:', data);
-      if (data.targetKioskId && data.targetKioskId.toUpperCase() !== kioskId.toUpperCase() && data.kioskId && data.kioskId.toUpperCase() !== kioskId.toUpperCase()) {
+      const currentStation = (kioskIdRef.current || '').replace(/[\s-_]/g, '').toUpperCase();
+      const targetStation = (data.targetKioskId || data.kioskId || '').replace(/[\s-_]/g, '').toUpperCase();
+
+      if (targetStation && currentStation && targetStation !== currentStation) {
+        console.log(`⏭️ Ignoring print signal for station "${targetStation}" (this station is "${currentStation}")`);
         return; // Guard: Only print if this signal was targeted for this station!
       }
 
@@ -220,16 +295,7 @@ export default function KioskApp() {
       rotatePairToken();
       startPageProgressSimulation(totalPgs);
 
-      // Trigger physical print pipeline on backend/printer
-      if (data.jobId) {
-        fetch(`${getApiUrl()}/api/jobs/${data.jobId}/print`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kioskId }),
-        }).catch((e) => console.warn('Kiosk print trigger notice:', e));
-      }
-
-      // Complete print
+      // Complete print simulation and notify backend
       setTimeout(() => {
         handleJobCompleted(data.jobId);
       }, Math.max(5000, totalPgs * 1200));
@@ -238,7 +304,11 @@ export default function KioskApp() {
     // Receive new print job
     socket.on('new_job', (data: any) => {
       console.log('📥 New print job received:', data);
-      if (data.targetKioskId && data.targetKioskId.toUpperCase() !== kioskId.toUpperCase()) {
+      const currentStation = (kioskIdRef.current || '').replace(/[\s-_]/g, '').toUpperCase();
+      const targetStation = (data.targetKioskId || data.kioskId || data.job?.kioskId || '').replace(/[\s-_]/g, '').toUpperCase();
+
+      if (targetStation && currentStation && targetStation !== currentStation) {
+        console.log(`⏭️ Ignoring new_job for station "${targetStation}" (this station is "${currentStation}")`);
         return;
       }
 
@@ -253,12 +323,12 @@ export default function KioskApp() {
         colorMode: data.colorMode || data.job?.colorMode || 'BW',
         copies: data.copies || data.job?.copies || 1,
       });
+
       setCurrentCharmingLine(getRandomCharmingLine());
       setScreen('printing');
       rotatePairToken();
       startPageProgressSimulation(totalPgs);
 
-      // Complete print
       setTimeout(() => {
         handleJobCompleted(data.jobId || data.job?.id);
       }, Math.max(5000, totalPgs * 1200));
@@ -357,11 +427,49 @@ export default function KioskApp() {
           <img src="/printbro_logo.png" alt="PrintBro" className="h-12 md:h-14 object-contain" />
         </div>
 
-        {/* Station & Status Badge */}
+        {/* Station & Status Badge with Interactive Station Switcher */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-white/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 shadow-sm text-xs font-bold text-slate-700">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Station: <strong className="text-slate-900">{kioskId}</strong></span>
+          <div className="relative">
+            <button
+              onClick={() => setShowStationPicker(prev => !prev)}
+              className="flex items-center gap-2 bg-white/90 hover:bg-white backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 shadow-sm text-xs font-bold text-slate-700 transition-all hover:border-blue-400 active:scale-95"
+              title="Click to switch kiosk station"
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Station: <strong className="text-blue-700 font-black">{kioskId}</strong></span>
+              <span className="text-[10px] text-slate-400 ml-1">▾</span>
+            </button>
+
+            {/* Station dropdown */}
+            {showStationPicker && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] uppercase font-black text-slate-400">
+                  Select Kiosk Station
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {allKiosks.length > 0 ? (
+                    allKiosks.map((k: any) => (
+                      <button
+                        key={k.id || k.displayId}
+                        onClick={() => handleSelectStation(k.displayId)}
+                        className={`w-full text-left px-3.5 py-2 text-xs font-bold transition-all flex items-center justify-between hover:bg-blue-50 ${
+                          k.displayId.toUpperCase() === kioskId.toUpperCase()
+                            ? 'text-blue-700 bg-blue-50/70 font-black'
+                            : 'text-slate-700'
+                        }`}
+                      >
+                        <span className="truncate">{k.displayId} ({k.name || 'Station'})</span>
+                        {k.displayId.toUpperCase() === kioskId.toUpperCase() && (
+                          <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3.5 py-2 text-xs text-slate-400">Loading stations...</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-3.5 py-2 rounded-2xl text-xs font-bold shadow-sm">

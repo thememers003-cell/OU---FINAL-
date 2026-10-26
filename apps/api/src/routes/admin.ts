@@ -423,7 +423,9 @@ router.get('/kiosks', async (req: Request, res: Response) => {
       orderBy: { displayId: 'asc' },
     });
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://xpos-printing-cloud-customer.vercel.app';
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('xpos-printing-cloud-customer.vercel.app'))
+      ? process.env.NEXT_PUBLIC_APP_URL
+      : 'http://localhost:3000';
 
     res.json({
       success: true,
