@@ -283,7 +283,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
   }
 });
 
-// ── Execute print — downloads file and sends to SavaPage ──
+// ── Execute print — downloads file and sends to SavaPage / Kiosk Station ──
 router.post('/:id/print', async (req: Request, res: Response) => {
   try {
     const prisma = req.app.locals.prisma;
@@ -293,206 +293,194 @@ router.post('/:id/print', async (req: Request, res: Response) => {
 
     const job = await prisma.printJob.findFirst({
       where: { OR: [{ id: req.params.id }, { displayId: req.params.id }] },
-      include: { file: true, kiosk: true },
+      include: { file: true, kiosk: true, payment: true },
     });
 
     if (!job) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
 
-    if (job.status !== 'SENDING' && job.status !== 'QUEUED' && job.status !== 'PAID' && job.status !== 'PRINTING') {
+    // Verify payment or status eligibility
+    const hasPaidPayment = job.payment?.status === 'PAID' || await prisma.payment.findFirst({
+      where: { jobId: job.id, status: 'PAID' },
+    });
+
+    if (!hasPaidPayment && job.status !== 'PAID' && job.status !== 'QUEUED' && job.status !== 'SENDING' && job.status !== 'PRINTING') {
       return res.status(400).json({ success: false, error: `Cannot print job in status: ${job.status}` });
     }
 
-    // Get file path for printing (zero-copy if available locally)
-    const fs = require('fs');
-    const path = require('path');
-    const os = require('os');
-
-    let tempFilePath = typeof storage.getLocalFilePath === 'function'
-      ? storage.getLocalFilePath(job.file.storageKey)
-      : null;
-
-    if (!tempFilePath || !fs.existsSync(tempFilePath)) {
-      const tempDir = path.join(os.tmpdir(), 'xpos-print');
-      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-      const safeBaseName = path.basename(job.file.originalName, path.extname(job.file.originalName)).replace(/[^a-zA-Z0-9_-]/g, '_');
-      tempFilePath = path.join(tempDir, `${job.id}_${safeBaseName}.pdf`);
-      const fileBuffer = await storage.downloadFile(job.file.storageKey);
-      fs.writeFileSync(tempFilePath, fileBuffer);
-      console.log(`📥 Downloaded "${job.file.originalName}" to temp path: "${tempFilePath}"`);
-    } else {
-      console.log(`⚡ Direct fast-print path used: "${tempFilePath}"`);
+    // ⚡ Resolve target kiosk (by displayId, ID, or name)
+    const targetStationInput = req.body.kioskId || job.kiosk?.displayId || job.kioskId;
+    let targetKiosk: any = null;
+    if (targetStationInput) {
+      targetKiosk = await prisma.kiosk.findFirst({
+        where: {
+          OR: [
+            { id: targetStationInput },
+            { displayId: targetStationInput },
+            { name: targetStationInput },
+          ],
+        },
+      });
+    }
+    if (!targetKiosk && job.kiosk) {
+      targetKiosk = job.kiosk;
     }
 
-    // Update status to PRINTING
+    const targetKioskId = targetKiosk?.displayId || targetStationInput || 'XPOS-001';
+    const targetKioskUUID = targetKiosk?.id || job.kioskId;
+
+    // Update status to PRINTING & associate target kiosk in DB
     await prisma.printJob.update({
       where: { id: job.id },
-      data: { status: 'PRINTING' },
+      data: {
+        status: 'PRINTING',
+        ...(targetKioskUUID ? { kioskId: targetKioskUUID } : {}),
+      },
     });
 
-    io.to(`session:${job.sessionId}`).emit('job_update', {
+    // Generate fresh file download URL for kiosk
+    let downloadUrl = `${process.env.NEXT_PUBLIC_API_URL || 'https://xpos-printing-cloud.onrender.com'}/api/files/download/${job.file?.storageKey}`;
+    try {
+      if (storage?.getSignedUrl && job.file?.storageKey) {
+        downloadUrl = await storage.getSignedUrl(job.file.storageKey, 3600);
+      }
+    } catch (e) {
+      console.warn('Could not generate signed URL, using direct route:', e);
+    }
+
+    const kioskPayload = {
+      type: 'NEW_JOB',
+      jobId: job.id,
+      displayId: job.displayId,
+      totalPages: (job.totalPages || 1) * (job.copies || 1),
+      fileName: job.file?.originalName || 'Document.pdf',
+      colorMode: job.colorMode || 'BW',
+      copies: job.copies || 1,
+      sides: job.sides || 'SINGLE',
+      paperSize: job.paperSize || 'A4',
+      downloadUrl,
+      targetKioskId,
+      targetKioskUUID,
+      kioskId: targetKioskUUID,
+      job: {
+        id: job.id,
+        displayId: job.displayId,
+        colorMode: job.colorMode,
+        copies: job.copies || 1,
+        sides: job.sides,
+        totalPages: job.totalPages,
+        kioskId: targetKioskUUID,
+        kiosk: targetKiosk ? {
+          id: targetKiosk.id,
+          displayId: targetKiosk.displayId,
+          name: targetKiosk.name,
+        } : null,
+        file: {
+          originalName: job.file?.originalName || 'Document.pdf',
+          storageKey: job.file?.storageKey,
+        },
+      },
+    };
+
+    // ⚡ REAL-TIME DISPATCH: Emit socket events to station, customer, and admin
+    if (job.sessionId) {
+      io.to(`session:${job.sessionId}`).emit('job_update', {
+        type: 'JOB_UPDATE',
+        jobId: job.id,
+        displayId: job.displayId,
+        status: 'PRINTING',
+        currentPage: 1,
+        totalPages: (job.totalPages || 1) * (job.copies || 1),
+      });
+    }
+
+    io.emit('job_update', {
       type: 'JOB_UPDATE',
       jobId: job.id,
       displayId: job.displayId,
       status: 'PRINTING',
-      currentPage: 0,
-      totalPages: job.totalPages * (job.copies || 1),
+      currentPage: 1,
+      totalPages: (job.totalPages || 1) * (job.copies || 1),
     });
 
-    // ⚡ Real-Time Instant Print Dispatch to Target Kiosk Station
-    const targetKioskId = req.body.kioskId || job.kiosk?.displayId || job.kioskId;
-    if (targetKioskId) {
-      let downloadUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/files/download/${job.file?.storageKey}`;
-      try {
-        downloadUrl = await storage.getSignedUrl(job.file.storageKey, 600);
-      } catch {}
-
-      const kioskPayload = {
-        type: 'NEW_JOB',
-        jobId: job.id,
-        displayId: job.displayId,
-        totalPages: job.totalPages * (job.copies || 1),
-        fileName: job.file?.originalName || 'Document.pdf',
-        colorMode: job.colorMode,
-        copies: job.copies || 1,
-        downloadUrl,
-        job: {
-          id: job.id,
-          displayId: job.displayId,
-          colorMode: job.colorMode,
-          copies: job.copies || 1,
-          totalPages: job.totalPages,
-          file: {
-            originalName: job.file?.originalName || 'Document.pdf',
-            storageKey: job.file?.storageKey,
-          },
-        },
-      };
-
-      if (job.kioskId) io.to(`kiosk:${job.kioskId}`).emit('new_job', kioskPayload);
-      if (job.kiosk?.displayId) io.to(`kiosk:${job.kiosk.displayId}`).emit('new_job', kioskPayload);
-      if (req.body.kioskId) io.to(`kiosk:${req.body.kioskId}`).emit('new_job', kioskPayload);
-      io.emit('kiosk_paired_print', { ...kioskPayload, targetKioskId });
-      console.log(`⚡ Instant Print Event emitted to Station ${targetKioskId}`);
+    if (targetKioskUUID) {
+      io.to(`kiosk:${targetKioskUUID}`).emit('new_job', kioskPayload);
+    }
+    if (targetKiosk?.displayId) {
+      io.to(`kiosk:${targetKiosk.displayId}`).emit('new_job', kioskPayload);
+    }
+    if (targetStationInput && targetStationInput !== targetKiosk?.displayId && targetStationInput !== targetKioskUUID) {
+      io.to(`kiosk:${targetStationInput}`).emit('new_job', kioskPayload);
     }
 
-    // Submit to SavaPage (or mock printer)
-    const printResult = await printer.submitPrintJob({
-      filePath: tempFilePath,
-      printerName: req.body.printerName || undefined,
-      colorMode: job.colorMode,
-      paperSize: job.paperSize,
-      sides: job.sides,
-      copies: job.copies || 1,
-      pageRange: job.pageRange || undefined,
-      totalPages: job.totalPages,
+    // Direct paired print broadcast
+    io.emit('kiosk_paired_print', kioskPayload);
+
+    // Notify Admin Portal in Real Time
+    io.to('admin').emit('job_updated', {
+      id: job.id,
+      displayId: job.displayId,
+      status: 'PRINTING',
+      targetKiosk: targetKioskId,
+      kioskName: targetKioskId,
+      updatedAt: new Date().toISOString(),
     });
+    console.log(`⚡ Instant Print Event dispatched to Station ${targetKioskId} (UUID: ${targetKioskUUID})`);
 
-    console.log(`🖨️ Print job submitted: ${printResult.jobId} (status: ${printResult.status})`);
+    // Asynchronously trigger hardware printer driver if present locally on host
+    (async () => {
+      try {
+        if (!printer || typeof printer.submitPrintJob !== 'function') return;
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
 
-    // Listen for progress events from the printer service
-    const onProgress = (data: any) => {
-      if (data.jobId === printResult.jobId) {
-        prisma.printJob.update({
-          where: { id: job.id },
-          data: { currentPage: data.currentPage, status: 'PRINTING' },
-        }).catch(() => {});
+        let tempFilePath = typeof storage?.getLocalFilePath === 'function' && job.file?.storageKey
+          ? storage.getLocalFilePath(job.file.storageKey)
+          : null;
 
-        io.to(`session:${job.sessionId}`).emit('job_update', {
-          type: 'JOB_UPDATE',
-          jobId: job.id,
-          displayId: job.displayId,
-          status: 'PRINTING',
-          currentPage: data.currentPage,
-          totalPages: data.totalPages,
-        });
+        if ((!tempFilePath || !fs.existsSync(tempFilePath)) && job.file?.storageKey) {
+          const tempDir = path.join(os.tmpdir(), 'xpos-print');
+          if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+          const safeBaseName = path.basename(job.file.originalName, path.extname(job.file.originalName)).replace(/[^a-zA-Z0-9_-]/g, '_');
+          tempFilePath = path.join(tempDir, `${job.id}_${safeBaseName}.pdf`);
+          const fileBuffer = await storage.downloadFile(job.file.storageKey);
+          fs.writeFileSync(tempFilePath, fileBuffer);
+        }
 
-        // Also notify kiosk
-        if (job.kioskId) {
-          io.to(`kiosk:${job.kioskId}`).emit('job_progress', {
-            jobId: job.id,
-            currentPage: data.currentPage,
-            totalPages: data.totalPages,
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+          const printResult = await printer.submitPrintJob({
+            filePath: tempFilePath,
+            printerName: req.body.printerName || undefined,
+            colorMode: job.colorMode,
+            paperSize: job.paperSize,
+            sides: job.sides,
+            copies: job.copies || 1,
+            pageRange: job.pageRange || undefined,
+            totalPages: job.totalPages,
           });
+          console.log(`🖨️ Local hardware printer submit: ${printResult?.jobId} (${printResult?.status})`);
         }
+      } catch (err: any) {
+        console.log(`ℹ️ [Hardware Printer] Cloud host bypassed local driver (${err?.message || err}). Kiosk station displays and outputs.`);
       }
-    };
+    })();
 
-    const onCompleted = (data: any) => {
-      if (data.jobId === printResult.jobId) {
-        const completedDate = new Date();
-        Promise.all([
-          prisma.printJob.update({
-            where: { id: job.id },
-            data: { status: 'COMPLETED', completedAt: completedDate, currentPage: data.totalPages },
-          }),
-          prisma.printCode.updateMany({
-            where: { jobId: job.id },
-            data: { status: 'USED', usedAt: completedDate },
-          }),
-        ]).catch((err) => console.error('Completion sync error:', err));
-
-        io.to(`session:${job.sessionId}`).emit('job_update', {
-          type: 'JOB_UPDATE',
-          jobId: job.id,
-          displayId: job.displayId,
-          status: 'COMPLETED',
-          currentPage: data.totalPages,
-          totalPages: data.totalPages,
-        });
-
-        // Notify Admin Portal in Real Time
-        io.to('admin').emit('job_updated', {
-          id: job.id,
-          displayId: job.displayId,
-          status: 'COMPLETED',
-          completedAt: completedDate.toISOString(),
-          currentPage: data.totalPages,
-          totalPages: data.totalPages,
-        });
-
-        if (job.kioskId) {
-          io.to(`kiosk:${job.kioskId}`).emit('job_completed', { jobId: job.id });
-        }
-
-        // Immediate Privacy Cleanup: Delete document from storage & temp cache
-        printer.removeListener('progress', onProgress);
-        printer.removeListener('completed', onCompleted);
-
-        try {
-          if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        } catch {}
-
-        // Delete from cloud / local storage
-        if (job.file?.storageKey) {
-          storage.deleteFile(job.file.storageKey).then(() => {
-            console.log(`🔒 [Privacy & Storage] Deleted "${job.file.originalName}" (${job.file.storageKey}) immediately after printing.`);
-          }).catch(() => {});
-        }
-
-        // Mark print code as USED
-        prisma.printCode.updateMany({
-          where: { jobId: job.id, status: 'ACTIVE' },
-          data: { status: 'USED', usedAt: new Date() },
-        }).catch(() => {});
-      }
-    };
-
-    printer.on('progress', onProgress);
-    printer.on('completed', onCompleted);
-
-    res.json({
+    return res.json({
       success: true,
+      message: 'Print job dispatched to station successfully',
       data: {
-        printJobId: printResult.jobId,
-        status: printResult.status,
-        message: 'Print job submitted to printer',
+        jobId: job.id,
+        displayId: job.displayId,
+        status: 'PRINTING',
+        targetKiosk: targetKioskId,
+        totalPages: job.totalPages * (job.copies || 1),
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Print execution error:', error);
-    res.status(500).json({ success: false, error: 'Failed to execute print job' });
+    res.status(500).json({ success: false, error: error?.message || 'Failed to execute print job' });
   }
 });
 

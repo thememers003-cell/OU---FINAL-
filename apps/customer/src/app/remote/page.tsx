@@ -224,7 +224,8 @@ function RemotePrintContent() {
     setPrintStatus('SENDING');
     setError(null);
     try {
-      const res = await triggerPrintJob(paramJobId, selectedKiosk || undefined);
+      const targetStation = selectedKiosk || paidJob?.kiosk?.displayId || paidJob?.kioskId || undefined;
+      const res = await triggerPrintJob(paramJobId, targetStation);
       if (res.success) {
         setPrintStatus('PRINTING');
       } else {

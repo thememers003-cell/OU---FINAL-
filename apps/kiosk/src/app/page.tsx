@@ -230,7 +230,13 @@ export default function KioskApp() {
       try {
         const res = await fetch(`${getApiUrl()}/api/kiosks/${kioskId}`);
         const data = await res.json();
-        if (data.success) setKioskInfo(data.data);
+        if (data.success && data.data) {
+          setKioskInfo(data.data);
+          if (socketRef.current && socketRef.current.connected) {
+            socketRef.current.emit('join_kiosk', { kioskId: data.data.id });
+            socketRef.current.emit('join_kiosk', { kioskId: data.data.displayId });
+          }
+        }
       } catch (e) { console.error('Failed to load kiosk info:', e); }
     }
     loadKiosk();
@@ -254,6 +260,12 @@ export default function KioskApp() {
       console.log(`🔌 Kiosk connected to XPOS Cloud as Station ${kioskIdRef.current}`);
       setIsConnected(true);
       socket.emit('join_kiosk', { kioskId: kioskIdRef.current });
+      if (kioskInfo?.id && kioskInfo.id !== kioskIdRef.current) {
+        socket.emit('join_kiosk', { kioskId: kioskInfo.id });
+      }
+      if (kioskInfo?.displayId && kioskInfo.displayId !== kioskIdRef.current) {
+        socket.emit('join_kiosk', { kioskId: kioskInfo.displayId });
+      }
     });
 
     socket.on('disconnect', (reason) => {
@@ -266,28 +278,52 @@ export default function KioskApp() {
       setIsConnected(false);
     });
 
+    // Station identifier matching helper
+    const isTargetStationMatch = (data: any) => {
+      const thisStationIds = [
+        kioskIdRef.current,
+        kioskInfo?.id,
+        kioskInfo?.displayId,
+        kioskInfo?.name,
+      ].filter(Boolean).map((s: string) => String(s).replace(/[\s-_]/g, '').toUpperCase());
+
+      const targetStationIds = [
+        data.targetKioskId,
+        data.targetKioskUUID,
+        data.kioskId,
+        data.job?.kioskId,
+        data.job?.kiosk?.id,
+        data.job?.kiosk?.displayId,
+        data.job?.kiosk?.name,
+      ].filter(Boolean).map((s: string) => String(s).replace(/[\s-_]/g, '').toUpperCase());
+
+      // If no target station was specified, accept event
+      if (targetStationIds.length === 0) return true;
+
+      // Check if ANY target station matches ANY of our station identifiers
+      return targetStationIds.some((targetId) => thisStationIds.includes(targetId));
+    };
+
     // ⚡ Instant Real-Time Print Event from Customer "Print Now"
     socket.on('kiosk_paired_print', (data: any) => {
       console.log('⚡ Real-Time Print Signal Received:', data);
-      const currentStation = (kioskIdRef.current || '').replace(/[\s-_]/g, '').toUpperCase();
-      const targetStation = (data.targetKioskId || data.kioskId || '').replace(/[\s-_]/g, '').toUpperCase();
 
-      if (targetStation && currentStation && targetStation !== currentStation) {
-        console.log(`⏭️ Ignoring print signal for station "${targetStation}" (this station is "${currentStation}")`);
-        return; // Guard: Only print if this signal was targeted for this station!
+      if (!isTargetStationMatch(data)) {
+        console.log(`⏭️ Ignoring print signal (not targeted for station "${kioskIdRef.current}")`);
+        return;
       }
 
       playKeySound('success');
-      const totalPgs = data.totalPages || 1;
+      const totalPgs = data.totalPages || data.job?.totalPages || 1;
       setJobData({
-        jobId: data.jobId,
-        displayId: data.displayId,
-        downloadUrl: data.downloadUrl || `${getApiUrl()}/api/files/download/${data.jobId}`,
+        jobId: data.jobId || data.job?.id,
+        displayId: data.displayId || data.job?.displayId,
+        downloadUrl: data.downloadUrl || `${getApiUrl()}/api/files/download/${data.jobId || data.job?.id}`,
         totalPages: totalPgs,
         currentPage: 1,
-        fileName: data.fileName || 'Document.pdf',
-        colorMode: data.colorMode || 'BW',
-        copies: data.copies || 1,
+        fileName: data.fileName || data.job?.file?.originalName || 'Document.pdf',
+        colorMode: data.colorMode || data.job?.colorMode || 'BW',
+        copies: data.copies || data.job?.copies || 1,
       });
 
       setCurrentCharmingLine(getRandomCharmingLine());
@@ -297,26 +333,25 @@ export default function KioskApp() {
 
       // Complete print simulation and notify backend
       setTimeout(() => {
-        handleJobCompleted(data.jobId);
+        handleJobCompleted(data.jobId || data.job?.id);
       }, Math.max(5000, totalPgs * 1200));
     });
 
     // Receive new print job
     socket.on('new_job', (data: any) => {
       console.log('📥 New print job received:', data);
-      const currentStation = (kioskIdRef.current || '').replace(/[\s-_]/g, '').toUpperCase();
-      const targetStation = (data.targetKioskId || data.kioskId || data.job?.kioskId || '').replace(/[\s-_]/g, '').toUpperCase();
 
-      if (targetStation && currentStation && targetStation !== currentStation) {
-        console.log(`⏭️ Ignoring new_job for station "${targetStation}" (this station is "${currentStation}")`);
+      if (!isTargetStationMatch(data)) {
+        console.log(`⏭️ Ignoring new_job (not targeted for station "${kioskIdRef.current}")`);
         return;
       }
 
+      playKeySound('success');
       const totalPgs = data.totalPages || data.job?.totalPages || 1;
       setJobData({
         jobId: data.jobId || data.job?.id,
         displayId: data.displayId || data.job?.displayId,
-        downloadUrl: data.downloadUrl || `${getApiUrl()}/api/files/download/${data.job?.file?.storageKey}`,
+        downloadUrl: data.downloadUrl || `${getApiUrl()}/api/files/download/${data.job?.file?.storageKey || data.jobId}`,
         totalPages: totalPgs,
         currentPage: 1,
         fileName: data.fileName || data.job?.file?.originalName || 'Document.pdf',
